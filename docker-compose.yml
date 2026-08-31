@@ -1,0 +1,20 @@
+services:
+  jobradar:
+    build: .
+    container_name: jobradar
+    ports:
+      - "8420:8000"
+    environment:
+      # Scoring uses the Anthropic API inside the container (the `claude` CLI
+      # isn't there). Without a key the app still tracks jobs, just unscored.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - JOBRADAR_SWEEP_HOURS=6
+    volumes:
+      # Same ./data the host app uses. Safe only because the two never run at
+      # once — run.sh stops the container first. A bind-mounted SQLite file read
+      # concurrently from host and container reports "disk image is malformed".
+      - ./data:/app/data
+      - ./companies.json:/app/companies.json
+    # No auto-restart: the host app in run.sh owns ./data, and two
+    # processes on one SQLite file is how data goes stale or corrupt.
+    restart: "no"

@@ -1,0 +1,23 @@
+[
+  {
+    "company": "Notion",
+    "provider": "greenhouse",
+    "slug": "notion",
+    "url": "https://www.notion.so/careers",
+    "note": "Example entry — a real public Greenhouse board, unrelated to any real search list. Copy this file to companies.json and replace with your own targets."
+  },
+  {
+    "company": "Figma",
+    "provider": "greenhouse",
+    "slug": "figma",
+    "url": "https://www.figma.com/careers/",
+    "note": "Another real board, so a fresh clone can run a sweep and see it work end to end."
+  },
+  {
+    "company": "Discord",
+    "provider": "greenhouse",
+    "slug": "discord",
+    "url": "https://discord.com/careers",
+    "note": "Add or remove companies freely — see README for how the ATS is detected from a careers URL."
+  }
+]

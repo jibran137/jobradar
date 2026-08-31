@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block body %}
+
+<p class="note-p">The boards being watched. A company at <b>0 open</b> isn't a
+  mistake — the watcher is there to catch its first posting the day it goes up.
+  Sorted by how much each has for you right now.</p>
+
+<section class="run">
+  <form method="post" action="/companies/add" class="run-head">
+    <span class="label">Watch another company</span>
+    <input class="grow" style="flex:1;min-width:220px" type="url" name="url" required
+           placeholder="https://company.com/careers" aria-label="Careers page URL">
+    <input type="text" name="name" placeholder="Name (optional)" aria-label="Company name">
+    <button class="go">Find its job board</button>
+  </form>
+  <p class="cost" style="margin:9px 0 0">Paste a careers page and the applicant
+    tracking system behind it is detected automatically — Ashby, Greenhouse,
+    Lever, Personio, Recruitee, SmartRecruiters and Workable are read directly.
+    Which one a company uses is itself a signal: Ashby, Greenhouse and Lever
+    almost always mean the company works in English.</p>
+</section>
+
+<div class="panel" style="overflow-x:auto">
+<table>
+  <thead><tr>
+    <th>Company</th><th>Board</th><th>Where</th>
+    <th style="text-align:right">Open</th>
+    <th style="text-align:right">Unread</th>
+    <th style="text-align:right">Worth a look</th>
+    <th>Why it's on the list</th>
+  </tr></thead>
+  <tbody>
+  {% for c in companies %}
+    <tr>
+      <td><a href="/?show=all&amp;company={{ c.company | urlencode }}">{{ c.company }}</a></td>
+      <td><span class="cost">{{ c.provider }}</span></td>
+      <td>{% if c.hardware %}<span class="label"
+             style="font-size:9px;color:var(--muted)">hardware</span>{% endif %}</td>
+      <td class="n" style="text-align:right">{{ c.open or '—' }}</td>
+      <td class="n" style="text-align:right;color:var(--muted)">{{ c.unread or '—' }}</td>
+      <td class="n" style="text-align:right">
+        {%- if c.apply %}<b style="color:var(--signal)">{{ c.apply }}</b>
+        {%- elif c.maybe %}<span style="color:var(--caution)">{{ c.maybe }}</span>
+        {%- else %}—{% endif %}</td>
+      <td class="cost" style="max-width:34ch">{{ c.note or '' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<section class="run" style="margin-top:20px">
+  <div class="run-head">
+    <span class="label">Judge everything again</span>
+    <span class="cost" style="flex:1">Re-reads the postings already saved and
+      judges them against the current profile. Use it after editing
+      <span class="num">PROFILE</span> in <span class="num">core.py</span> —
+      when your German improves, or the M.Sc. finishes. Costs one model call per
+      posting; it does not re-fetch any board.</span>
+    <form method="post" action="/score">
+      <input type="hidden" name="rescore" value="1">
+      <input type="hidden" name="limit" value="200">
+      <input type="hidden" name="back" value="/companies">
+      <button {{ 'disabled' if state.running }}>Re-judge 200</button>
+    </form>
+  </div>
+</section>
+
+{% endblock %}

@@ -1,0 +1,5 @@
+data/
+digests/
+seen.sqlite3
+__pycache__/
+*.pyc

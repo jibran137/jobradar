@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Send list — jobradar{% endblock %}
+
+{% block body %}
+
+<p class="note-p">One role per company — the best-scoring open posting at each,
+  strongest fit first. The queue is sorted by posting, which stacks up behind a
+  few big employers; this is sorted by <em>company</em>, because that's the unit
+  you actually send. Marking one sent writes it to the database, so it leaves
+  this list and appears under Applied.</p>
+
+<p class="note-p">Each row carries which of the tailored CVs the posting wants —
+  decided from the posting text itself, so <b>Working student</b> beats the stack
+  split when the title says so, and <b>General</b> means the posting names no
+  particular stack rather than that nothing was found. <b>Whether the form wants a
+  cover letter is a different question</b>, and one the posting can't answer: it
+  needs the form opened. Until then a row says <i>Form not opened</i>, and the
+  letter chip reports only what already exists in <span class="num">cvwork/cover_letters/</span>.</p>
+
+<section class="run">
+  <div class="run-head">
+    <span class="label">On the list</span>
+    <span class="v num" style="font-size:20px">{{ list|length }}</span>
+    <span class="label" style="margin-left:14px">Apply-grade</span>
+    <span class="v num" style="font-size:20px;color:var(--signal)">{{ n_apply }}</span>
+    <span class="label" style="margin-left:14px">Set aside</span>
+    <span class="v num" style="font-size:20px;color:var(--caution)">{{ cut|length }}</span>
+    <span class="label" style="margin-left:14px">Sent</span>
+    <span class="v num" style="font-size:20px;color:var(--muted)">{{ sent|length }}</span>
+    <span style="flex:1"></span>
+    <form method="get" action="/shortlist" style="display:flex;gap:6px;align-items:center">
+      <span class="label" style="font-size:10px;color:var(--muted)">Aim for</span>
+      <input type="number" name="target" min="1" max="200" value="{{ target }}"
+             style="width:72px" aria-label="How many companies to list">
+      <button>Set</button>
+    </form>
+  </div>
+  {% if funnel.unread %}
+    <p class="cost" style="margin:9px 0 0">{{ funnel.unread }} postings are still
+      unread — this list can only rank what has been judged. Read more and it grows.</p>
+  {% endif %}
+</section>
+
+{% if not list %}
+  <div class="empty">
+    <p class="big">Nothing left to send.</p>
+    <p>Every scored company is either sent, dismissed, or set aside below.</p>
+  </div>
+{% endif %}
+
+{% for r in list %}
+  <article class="job v-{{ r.verdict }}">
+    <div class="pad">
+      <div class="job-top">
+        <span class="num" style="color:var(--faint);font-size:12px;padding-top:3px;
+                    min-width:2.2ch">{{ loop.index }}</span>
+        <div style="flex:1;min-width:0">
+          <h2><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.company }}</a></h2>
+          <p class="meta">{{ r.title }}{% if r.location %} · {{ r.location }}{% endif %}</p>
+        </div>
+        <div class="rail" data-tier="{{ r.loc_tier }}" title="{{ loc_label.get(r.loc_tier, '') }}">
+          {% set filled = {'remote': 4, 'local': 4, 'commutable': 3,
+                           'relocate': 2, 'unknown': 1}.get(r.loc_tier, 1) %}
+          {% for i in range(4) %}<i class="{{ 'on' if i < filled }}"></i>{% endfor %}
+          <span class="rail-txt">{{ loc_label.get(r.loc_tier, '') }}</span>
+        </div>
+        <span class="verdict">{{ r.verdict }}</span>
+      </div>
+
+      {% if r.reason %}<p class="reason">{{ r.reason }}</p>{% endif %}
+      {% if r.logistics and r.logistics|upper != 'NONE' %}
+        <p class="logi"><span class="label">Needs</span>{{ r.logistics }}</p>
+      {% endif %}
+
+      <div class="acts" style="margin-top:10px">
+        <span class="doc {{ 'on' if r.cv_ok }}" title="{{ r.cv_hint }} — {{ r.cv_why }}">
+          {{ '✓' if r.cv_ok else '○' }} CV — {{ r.cv_name }}</span>
+        {% if r.letter_pdf %}
+          <span class="doc on" title="{{ r.letter_pdf }}">✓ Letter written</span>
+        {% else %}
+          <span class="doc off">○ No letter written yet</span>
+        {% endif %}
+        {% if r.checked %}
+          <a class="doc on" href="/apply" style="text-decoration:none">✓ Form read — see Ready to send</a>
+        {% else %}
+          <span class="doc off" title="Nobody has opened this application form yet, so
+                what it asks for is unknown">○ Form not opened</span>
+        {% endif %}
+      </div>
+
+      <div class="acts">
+        <a class="btn" href="{{ r.url }}" target="_blank" rel="noopener">Open posting ↗</a>
+        <form method="post" action="/status">
+          <input type="hidden" name="company" value="{{ r.company }}">
+          <input type="hidden" name="job_id" value="{{ r.job_id }}">
+          <input type="hidden" name="back" value="/shortlist?target={{ target }}">
+          <input type="hidden" name="status" value="applied">
+          <button class="go">Sent</button>
+        </form>
+        <form method="post" action="/status">
+          <input type="hidden" name="company" value="{{ r.company }}">
+          <input type="hidden" name="job_id" value="{{ r.job_id }}">
+          <input type="hidden" name="back" value="/shortlist?target={{ target }}">
+          <input type="hidden" name="status" value="dismissed">
+          <button>Not for me</button>
+        </form>
+        <span class="spacer"></span>
+        <a class="chip" href="/?show=all&amp;company={{ r.company | urlencode }}"
+           title="Every open posting at this company">all {{ r.company }} roles</a>
+      </div>
+    </div>
+  </article>
+{% endfor %}
+
+{% if bench %}
+  <div class="floor-rule"><span class="label">Bench · {{ bench|length }} more, if one above closes</span></div>
+  <div class="panel" style="overflow-x:auto">
+  <table>
+    <thead><tr><th>Company</th><th>Role</th><th>Where</th><th></th></tr></thead>
+    <tbody>
+      {% for r in bench %}
+        <tr>
+          <td><b>{{ r.company }}</b></td>
+          <td>{{ r.title }}</td>
+          <td class="cost">{{ loc_label.get(r.loc_tier, '') }}</td>
+          <td><a class="chip" href="{{ r.url }}" target="_blank" rel="noopener">open ↗</a></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% endif %}
+
+{% if cut %}
+  <div class="floor-rule"><span class="label">Set aside · {{ cut|length }}</span></div>
+  <p class="note-p">These scored well on skills, and the verdict is right — it
+    judges role fit alone, on purpose. But the posting itself puts them out of
+    reach. Each row quotes the phrase that did it, so you can overrule any of
+    them: the pattern is a heuristic, not a ruling.</p>
+  <div class="panel" style="overflow-x:auto">
+  <table>
+    <thead><tr><th>Company</th><th>Role</th><th>Why not</th><th>In the posting</th><th></th></tr></thead>
+    <tbody>
+      {% for r in cut %}
+        <tr>
+          <td><b>{{ r.company }}</b></td>
+          <td>{{ r.title }}</td>
+          <td style="color:var(--caution)">{{ r.cut_why }}</td>
+          <td class="cost">“{{ r.cut_quote }}”</td>
+          <td><a class="chip" href="{{ r.url }}" target="_blank" rel="noopener">open ↗</a></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% endif %}
+
+{% endblock %}

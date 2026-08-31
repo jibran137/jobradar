@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}jobradar{% endblock %}</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   jobradar — a filter with a noise floor.
+   Palette: cool slate ground, teal for signal, amber for caution. The type
+   pairs Futura (labels, wordmark) with Avenir Next (prose) and SF Mono (counts).
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --ground:  #E9EDEF;  --panel:   #FFFFFF;  --sunk:    #DFE5E8;
+  --ink:     #10171D;  --muted:   #5C6A75;  --faint:   #8B98A3;
+  --rule:    #CBD5DB;  --rule-2:  #E2E8EB;
+  --signal:  #0E7C6B;  --signal-bg: #DDF0EC;
+  --caution: #9A6512;  --caution-bg: #F7EBD6;
+  --floor:   #7C8A95;
+  --focus:   #0E7C6B;
+  --shadow:  0 1px 2px rgba(16,23,29,.05), 0 6px 18px -10px rgba(16,23,29,.18);
+}
+:root:not([data-theme="light"]) { }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:  #0D1216;  --panel:   #151C22;  --sunk:    #101821;
+    --ink:     #E4EBF0;  --muted:   #94A3AF;  --faint:   #6B7A86;
+    --rule:    #26313A;  --rule-2:  #1D262E;
+    --signal:  #45C6AE;  --signal-bg: #10312D;
+    --caution: #D9A14A;  --caution-bg: #2E2415;
+    --floor:   #6B7A86;
+    --focus:   #45C6AE;
+    --shadow:  0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"] {
+  --ground:  #0D1216;  --panel:   #151C22;  --sunk:    #101821;
+  --ink:     #E4EBF0;  --muted:   #94A3AF;  --faint:   #6B7A86;
+  --rule:    #26313A;  --rule-2:  #1D262E;
+  --signal:  #45C6AE;  --signal-bg: #10312D;
+  --caution: #D9A14A;  --caution-bg: #2E2415;
+  --floor:   #6B7A86;
+  --focus:   #45C6AE;
+  --shadow:  0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--ground); color: var(--ink);
+  font: 15px/1.55 "Avenir Next", "Segoe UI Variable Text", "Nimbus Sans",
+        ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+/* Futura for anything that labels rather than reads. */
+.label, .brand, .tab, .eyebrow, th {
+  font-family: Futura, "Avenir Next Condensed", "Twentieth Century",
+               "Segoe UI Variable Display", ui-sans-serif, sans-serif;
+  letter-spacing: .09em; text-transform: uppercase;
+}
+.num { font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+       font-variant-numeric: tabular-nums; }
+
+/* ── header ────────────────────────────────────────────────────────────── */
+header { background: var(--panel); border-bottom: 1px solid var(--rule);
+  position: sticky; top: 0; z-index: 20; }
+.top { display: flex; align-items: center; gap: 18px; padding: 13px 0 12px; }
+.brand { font-size: 15px; font-weight: 600; letter-spacing: .16em; }
+.brand span { color: var(--signal); }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+/* ── the funnel: this tool's whole job, as live counts ─────────────────── */
+.funnel { display: flex; align-items: stretch; gap: 2px; padding: 0 0 13px; }
+.stage { flex: 1; min-width: 0; background: var(--sunk); border: 0;
+  border-radius: 3px; padding: 9px 11px 10px; text-align: left; cursor: pointer;
+  color: inherit; font: inherit; position: relative; overflow: hidden;
+  text-decoration: none; transition: background .14s ease; }
+.stage .k, .stage .v { text-decoration: none; }
+.stage:hover { background: var(--rule-2); }
+.stage[aria-current="true"] { background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--rule); }
+.stage .k { display: block; font-size: 9.5px; color: var(--faint);
+  margin-bottom: 3px; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.stage .v { display: block; font-size: 21px; line-height: 1; font-weight: 500;
+  letter-spacing: -.02em; }
+/* the attenuation trace: width encodes what survives each stage */
+.stage::after { content: ""; position: absolute; left: 0; bottom: 0; height: 2px;
+  width: var(--w, 0%); background: var(--floor); opacity: .5; }
+.stage.s-keep::after { background: var(--caution); opacity: 1; }
+.stage.s-apply::after { background: var(--signal); opacity: 1; }
+.stage.s-apply .v { color: var(--signal); }
+.stage.s-keep .v { color: var(--caution); }
+.stage.s-unread .v { color: var(--muted); }
+
+/* ── controls ──────────────────────────────────────────────────────────── */
+button, .btn { font: inherit; font-size: 13px; cursor: pointer;
+  border: 1px solid var(--rule); background: var(--panel); color: var(--ink);
+  border-radius: 6px; padding: 6px 11px; text-decoration: none;
+  display: inline-flex; align-items: center; gap: 6px; line-height: 1.2;
+  transition: border-color .13s ease, background .13s ease; }
+button:hover, .btn:hover { border-color: var(--muted); }
+button.go { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+button.go:hover { opacity: .87; }
+button.warn { border-color: var(--caution); color: var(--caution); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+:where(a, button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 5px; }
+input, select, textarea { font: inherit; font-size: 13.5px; color: var(--ink);
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
+  padding: 6px 9px; }
+input::placeholder { color: var(--faint); }
+
+/* ── primary nav: the four sections, always in the same order ───────────── */
+.nav { display: flex; gap: 4px; overflow-x: auto; padding: 10px 0;
+  scrollbar-width: none; }
+.nav::-webkit-scrollbar { display: none; }
+.nav-item { display: inline-flex; align-items: center; gap: 7px;
+  text-decoration: none; font-size: 12.5px; font-weight: 500; color: var(--muted);
+  white-space: nowrap; padding: 7px 12px; border-radius: 7px;
+  transition: background .13s ease, color .13s ease; }
+.nav-item:hover { color: var(--ink); background: var(--sunk); }
+.nav-item .ic { font-size: 12px; opacity: .7; line-height: 1; }
+.nav-item[aria-current="page"] { color: var(--ink); background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--rule), var(--shadow); }
+.nav-item[aria-current="page"] .ic { opacity: 1; color: var(--signal); }
+.nav-item .n { font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 10.5px; letter-spacing: 0; color: var(--faint);
+  background: var(--sunk); border-radius: 999px; padding: 1px 6px; }
+.nav-item[aria-current="page"] .n { color: var(--signal); background: var(--signal-bg); }
+
+/* ── subtabs: the queue's own view filter, one level below primary nav ──── */
+.subtabs { display: flex; gap: 3px; overflow-x: auto; padding: 0 0 11px;
+  scrollbar-width: none; border-top: 1px solid var(--rule-2); margin-top: 2px; }
+.subtabs::-webkit-scrollbar { display: none; }
+.subtab { text-decoration: none; font-size: 10.5px; padding: 8px 10px 0;
+  color: var(--muted); white-space: nowrap; border-bottom: 2px solid transparent; }
+.subtab:hover { color: var(--ink); }
+.subtab[aria-current="page"] { color: var(--ink); border-bottom-color: var(--signal); }
+.subtab .n { font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 10.5px; letter-spacing: 0; margin-left: 5px; color: var(--faint); }
+.subtab[aria-current="page"] .n { color: var(--signal); }
+
+/* ── filters (queue page) ─────────────────────────────────────────────── */
+
+.filters { display: flex; gap: 7px; flex-wrap: wrap; align-items: center;
+  padding: 12px 0; border-bottom: 1px solid var(--rule-2); }
+.filters .grow { flex: 1; min-width: 150px; }
+.chip { font-size: 12px; color: var(--muted); text-decoration: none;
+  border: 1px solid var(--rule); border-radius: 999px; padding: 3px 10px; }
+
+main { padding: 18px 0 80px; }
+
+/* ── run panel ─────────────────────────────────────────────────────────── */
+.run { background: var(--panel); border: 1px solid var(--rule);
+  border-radius: 8px; padding: 13px 15px; margin-bottom: 16px;
+  box-shadow: var(--shadow); }
+.run-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.run-head .label { font-size: 10.5px; color: var(--muted); }
+.meter { height: 3px; background: var(--sunk); border-radius: 2px;
+  margin: 11px 0 0; overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--signal);
+  width: var(--p, 0%); transition: width .4s ease; }
+.stream { font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 11.5px; line-height: 1.65; color: var(--muted); margin: 11px 0 0;
+  max-height: 190px; overflow: auto; white-space: pre-wrap; }
+.cost { font-size: 12px; color: var(--faint); }
+
+/* ── job cards ─────────────────────────────────────────────────────────── */
+.job { background: var(--panel); border: 1px solid var(--rule-2);
+  border-radius: 8px; margin-bottom: 8px; position: relative;
+  transition: border-color .13s ease; }
+.job:hover { border-color: var(--rule); }
+.job.is-focus { border-color: var(--focus); box-shadow: var(--shadow); }
+.job > .pad { padding: 13px 16px 14px 18px; }
+.job::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px;
+  width: 3px; border-radius: 0 3px 3px 0; background: transparent; }
+.job.v-APPLY::before { background: var(--signal); }
+.job.v-MAYBE::before { background: var(--caution); }
+.job.v-SKIP { opacity: .55; }
+.job.v-SKIP:hover, .job.v-SKIP:focus-within { opacity: 1; }
+
+.job-top { display: flex; align-items: flex-start; gap: 12px; }
+.job h2 { margin: 0; font-size: 15.5px; font-weight: 600; letter-spacing: -.005em;
+  line-height: 1.35; }
+.job h2 a { text-decoration: none; }
+.job h2 a:hover { text-decoration: underline; text-underline-offset: 2px; }
+.meta { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); }
+.meta b { font-weight: 600; color: var(--ink); }
+.verdict { font-family: Futura, "Avenir Next Condensed", ui-sans-serif, sans-serif;
+  font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 3px; white-space: nowrap; flex: none;
+  margin-top: 2px; }
+.v-APPLY .verdict { background: var(--signal-bg); color: var(--signal); }
+.v-MAYBE .verdict { background: var(--caution-bg); color: var(--caution); }
+.v-SKIP  .verdict { background: var(--sunk); color: var(--floor); }
+.v-none  .verdict { border: 1px dashed var(--rule); color: var(--faint); }
+
+/* distance rail — where the job sits on the reachable-from-Darmstadt axis */
+.rail { display: flex; align-items: center; gap: 3px; margin-top: 2px;
+  flex: none; }
+.rail i { width: 9px; height: 3px; border-radius: 1px; background: var(--rule); }
+.rail i.on { background: var(--muted); }
+.rail[data-tier="remote"] i.on, .rail[data-tier="local"] i.on { background: var(--signal); }
+.rail-txt { font-size: 11px; color: var(--muted); margin-left: 6px;
+  white-space: nowrap; }
+
+.reason { margin: 9px 0 0; font-size: 13.5px; color: var(--muted); max-width: 74ch; }
+.blockers { margin: 7px 0 0; font-size: 12.5px; color: var(--caution);
+  max-width: 74ch; }
+/* What taking the job would cost you — kept out of the verdict on purpose. */
+.logi { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); max-width: 74ch; }
+.logi .label { font-size: 9.5px; margin-right: 6px; color: var(--faint); }
+/* Document slots: a channel is either carrying something or it isn't. */
+.doc { font-size: 12px; padding: 4px 10px; border-radius: 5px;
+  background: var(--sunk); color: var(--muted); white-space: nowrap; }
+.doc.on { background: var(--signal-bg); color: var(--signal); font-weight: 600; }
+.doc.off { opacity: .6; }
+.blockers .label { font-size: 9.5px; margin-right: 6px; }
+.note-shown { margin: 8px 0 0; font-size: 13px; padding: 7px 11px;
+  background: var(--sunk); border-radius: 5px; color: var(--ink); }
+
+.acts { display: flex; gap: 5px; margin-top: 12px; flex-wrap: wrap;
+  align-items: center; }
+.acts form { display: contents; }
+.acts .spacer { flex: 1; }
+
+details.jd { margin-top: 11px; }
+details.jd > summary { cursor: pointer; font-size: 12px; color: var(--muted);
+  list-style: none; display: inline-flex; align-items: center; gap: 5px; }
+details.jd > summary::-webkit-details-marker { display: none; }
+details.jd > summary::before { content: "▸"; font-size: 9px; }
+details.jd[open] > summary::before { content: "▾"; }
+details.jd > summary:hover { color: var(--ink); }
+.jd-body { margin-top: 9px; padding: 12px 14px; background: var(--sunk);
+  border-radius: 6px; font-size: 13px; line-height: 1.6; color: var(--muted);
+  max-height: 380px; overflow: auto; white-space: pre-wrap; }
+.more { margin-top: 10px; border-top: 1px solid var(--rule-2); padding-top: 9px; }
+.more > summary { cursor: pointer; font-size: 12px; color: var(--faint);
+  list-style: none; display: inline-flex; align-items: center; gap: 5px; }
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::before { content: "+"; font-size: 13px; line-height: 1; }
+.more[open] > summary::before { content: "\2212"; }
+.more > summary:hover { color: var(--ink); }
+.note-form { display: flex; gap: 6px; margin-top: 10px; }
+.note-form input { flex: 1; }
+
+/* ── noise floor: everything below this line was filtered out ──────────── */
+.floor-rule { display: flex; align-items: center; gap: 12px; margin: 26px 0 14px;
+  color: var(--faint); }
+.floor-rule::before, .floor-rule::after { content: ""; height: 1px; flex: 1;
+  background: repeating-linear-gradient(90deg, var(--rule) 0 4px, transparent 4px 8px); }
+.floor-rule .label { font-size: 9.5px; }
+
+/* ── tables, empties, misc ─────────────────────────────────────────────── */
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th, td { text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--rule-2); }
+th { font-size: 9.5px; color: var(--faint); font-weight: 500; }
+td.n { font-family: "SF Mono", ui-monospace, Menlo, monospace; }
+tr:hover td { background: var(--sunk); }
+.panel { background: var(--panel); border: 1px solid var(--rule);
+  border-radius: 8px; padding: 4px 6px; box-shadow: var(--shadow); }
+.empty { text-align: center; padding: 64px 20px; color: var(--muted); }
+.empty .big { font-size: 17px; color: var(--ink); margin-bottom: 7px; }
+.note-p { font-size: 13px; color: var(--muted); margin: 0 0 16px; max-width: 78ch; }
+.pager { display: flex; gap: 8px; justify-content: center; margin-top: 22px; }
+kbd { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11px;
+  border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px;
+  padding: 1px 5px; color: var(--muted); }
+
+@media (max-width: 720px) {
+  .funnel { flex-wrap: wrap; }
+  .stage { flex: 1 1 30%; }
+  .stage .v { font-size: 17px; }
+  .job-top { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="top">
+      <span class="brand">job<span>radar</span></span>
+      <div class="top-right">
+        {% if state.running %}
+          <span class="label" style="font-size:10px;color:var(--muted)">{{ state.task }}…</span>
+          <form method="post" action="/stop"><button class="warn">Stop</button></form>
+        {% else %}
+          <form method="post" action="/sweep">
+            <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
+            <button title="Check every board for new postings. No model calls.">
+              Check boards</button>
+          </form>
+          <form method="post" action="/score">
+            <input type="hidden" name="limit" value="25">
+            <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
+            <button class="go" {{ 'disabled' if not funnel.unread or not scorer }}
+                    title="{{ 'Set ANTHROPIC_API_KEY to enable scoring' if not scorer else 'Read and judge the next 25 postings' }}">
+              Read next 25</button>
+          </form>
+        {% endif %}
+        <button type="button" id="theme" class="btn" title="Switch theme"
+                aria-label="Switch between light and dark">◐</button>
+      </div>
+    </div>
+
+    {% if request.url.path == '/' %}
+    <div class="funnel">
+      {% set f = funnel %}
+      <a class="stage" href="/?show=all" style="--w:100%"
+         title="Every posting currently open across the watched boards">
+        <span class="k">Tracked</span><span class="v num">{{ f.total }}</span></a>
+      <a class="stage" href="/?show=skip&amp;verdict=SKIP"
+         style="--w:{{ (100 * f.titled / (f.total or 1)) | round }}%"
+         title="Dropped on the title alone — no model call, no cost">
+        <span class="k">Title-filtered</span><span class="v num">{{ f.titled }}</span></a>
+      <a class="stage s-unread" href="/?show=all&amp;verdict=unread"
+         style="--w:{{ (100 * f.unread / (f.total or 1)) | round }}%"
+         title="Fetched but not yet read in full">
+        <span class="k">Unread</span><span class="v num">{{ f.unread }}</span></a>
+      <a class="stage" href="/?show=all"
+         style="--w:{{ (100 * f.read / (f.total or 1)) | round }}%"
+         title="Read in full and judged against your profile">
+        <span class="k">Read</span><span class="v num">{{ f.read }}</span></a>
+      <a class="stage s-keep" href="/?show=queue"
+         style="--w:{{ (100 * f.keep / (f.total or 1)) | round }}%"
+         title="Worth your attention">
+        <span class="k">Worth a look</span><span class="v num">{{ f.keep }}</span></a>
+      <a class="stage s-apply" href="/?show=all&amp;verdict=APPLY"
+         style="--w:{{ (100 * f.apply / (f.total or 1)) | round }}%"
+         title="Strong fit — apply">
+        <span class="k">Apply</span><span class="v num">{{ f.apply }}</span></a>
+    </div>
+    {% endif %}
+
+    <nav class="nav" aria-label="Sections">
+      <a class="nav-item" href="/" {{ 'aria-current="page"' | safe if request.url.path == '/' }}>
+        <span class="ic">◧</span>To decide<span class="n">{{ counts.queue }}</span></a>
+      <a class="nav-item" href="/shortlist" {{ 'aria-current="page"' | safe if request.url.path == '/shortlist' }}>
+        <span class="ic">➔</span>Send list</a>
+      <a class="nav-item" href="/apply" {{ 'aria-current="page"' | safe if request.url.path == '/apply' }}>
+        <span class="ic">✓</span>Ready to send</a>
+      <a class="nav-item" href="/companies" {{ 'aria-current="page"' | safe if request.url.path == '/companies' }}>
+        <span class="ic">▦</span>Companies</a>
+    </nav>
+
+    {% block tabs %}{% endblock %}
+  </div>
+</header>
+
+<main><div class="wrap">{% block body %}{% endblock %}</div></main>
+
+<script>
+// Theme: remember the choice, otherwise follow the system.
+(function () {
+  var root = document.documentElement, saved = localStorage.getItem("jr-theme");
+  if (saved) root.setAttribute("data-theme", saved);
+  document.getElementById("theme").addEventListener("click", function () {
+    var dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    var now = root.getAttribute("data-theme") || (dark ? "dark" : "light");
+    var next = now === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    localStorage.setItem("jr-theme", next);
+  });
+})();
+</script>
+{% if state.running %}
+<script>
+// Poll while a run is in flight, then refresh once it finishes.
+(function () {
+  var t = setInterval(function () {
+    fetch("/status.json").then(function (r) { return r.json(); }).then(function (s) {
+      var m = document.getElementById("meter");
+      if (m && s.total) m.style.setProperty("--p", (100 * s.done / s.total) + "%");
+      var st = document.getElementById("stream");
+      if (st) { st.textContent = s.log.join("\n"); st.scrollTop = st.scrollHeight; }
+      var c = document.getElementById("run-count");
+      if (c && s.total) c.textContent = s.done + " of " + s.total;
+      if (!s.running) { clearInterval(t); location.reload(); }
+    }).catch(function () {});
+  }, 1500);
+})();
+</script>
+{% endif %}
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Ready to send — jobradar{% endblock %}
+
+{% block body %}
+
+<p class="note-p">Every posting here has had its form opened and read, so what it
+  asks for is known — not guessed from the posting text. Document status is
+  checked against the files in <span class="num">cvwork/</span> each time this
+  page loads: <b>ready</b> means the CV, cover letter (if the form wants one),
+  and answers all already exist on disk. <b>Gap</b> means something is still
+  missing — usually a cover letter not yet written.</p>
+
+<section class="run">
+  <div class="run-head">
+    <span class="label">Ready to send</span>
+    <span class="v num" style="font-size:20px;color:var(--signal)">{{ ready }}</span>
+    <span class="label" style="margin-left:14px">Missing something</span>
+    <span class="v num" style="font-size:20px;color:var(--caution)">{{ gaps }}</span>
+    <span class="label" style="margin-left:14px">Sent</span>
+    <span class="v num" style="font-size:20px;color:var(--muted)">{{ sent }}</span>
+    <span style="flex:1"></span>
+    <span class="cost">No form here requires a cover letter — five accept one,
+      the rest ask the same things as questions.</span>
+  </div>
+</section>
+
+{% for r in rows %}
+  <article class="job {{ 'v-APPLY' if r.ready else 'v-MAYBE' }}">
+    <div class="pad">
+      <div class="job-top">
+        <div style="flex:1;min-width:0">
+          <h2><a href="{{ r.form_url }}" target="_blank" rel="noopener">{{ r.title }}</a></h2>
+          <p class="meta"><b>{{ r.company }}</b>{% if r.location %} · {{ r.location }}{% endif %}
+            · {{ loc_label.get(r.loc_tier, '') }}
+            {%- if r.status == 'applied' %} · <b style="color:var(--signal)">applied</b>
+            {%- elif r.status != 'new' %} · {{ r.status }}{% endif %}</p>
+        </div>
+        <span class="verdict">{{ 'ready' if r.ready else 'gap' }}</span>
+      </div>
+
+      <p class="logi"><span class="label">The form wants</span>
+        {{ r.asks | join(' · ') }}</p>
+
+      <div class="acts" style="margin-top:11px">
+        <span class="doc {{ 'on' if r.cv_ok }}">
+          {{ '✓' if r.cv_ok else '○' }} CV — {{ r.cv_name }}</span>
+        {% if r.letter in ('optional', 'required') %}
+          <span class="doc {{ 'on' if r.letter_ok }}">
+            {{ '✓' if r.letter_ok else '○' }} Cover letter
+            {{- ' (optional)' if r.letter == 'optional' }}</span>
+        {% else %}
+          <span class="doc off">— no letter field</span>
+        {% endif %}
+        <span class="doc {{ 'on' if r.answers_ok }}">
+          {{ '✓' if r.answers_ok else '○' }} Answers
+          {{- ' · ' ~ r.essays ~ ' essays' if r.essays }}</span>
+      </div>
+
+      {% if r.watch %}
+        <p class="blockers"><span class="label">Watch</span>{{ r.watch }}</p>
+      {% endif %}
+
+      <div class="acts">
+        <a class="btn" href="{{ r.form_url }}" target="_blank" rel="noopener">
+          Open the form ↗</a>
+        {% if r.status != 'applied' %}
+          <form method="post" action="/status">
+            <input type="hidden" name="company" value="{{ r.company }}">
+            <input type="hidden" name="job_id" value="{{ r.job_id }}">
+            <input type="hidden" name="status" value="applied">
+            <input type="hidden" name="back" value="/apply">
+            <button class="go">Mark as applied</button>
+          </form>
+        {% else %}
+          <form method="post" action="/status">
+            <input type="hidden" name="company" value="{{ r.company }}">
+            <input type="hidden" name="job_id" value="{{ r.job_id }}">
+            <input type="hidden" name="status" value="interested">
+            <input type="hidden" name="back" value="/apply">
+            <button>Undo</button>
+          </form>
+        {% endif %}
+        <span class="spacer" style="flex:1"></span>
+        <span class="cost">{{ r.cv_hint }}</span>
+      </div>
+
+      <details class="more">
+        <summary>Where the files are</summary>
+        <div class="jd-body">cvwork/{{ r.answers_md }}
+{% if r.letter_pdf %}cvwork/{{ r.letter_pdf }}
+{% endif %}cvwork/{{ r.cv_file }}
+{{ r.form_url }}</div>
+      </details>
+    </div>
+  </article>
+{% else %}
+  <div class="empty">
+    <p class="big">No applications prepped yet.</p>
+    <p>Roles get here once their form has been read and the documents written.</p>
+  </div>
+{% endfor %}
+
+{% endblock %}

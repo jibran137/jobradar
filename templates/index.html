@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+{% set qs = "show=" ~ show ~ "&q=" ~ q ~ "&verdict=" ~ verdict ~ "&loc=" ~ loc ~ "&company=" ~ company %}
+{% set back = "/?" ~ qs ~ "&page=" ~ page %}
+
+{% block tabs %}
+<div class="subtabs">
+  {% for key, name in [('queue','To decide'), ('interested','Interested'),
+                       ('applied','Applied'), ('dismissed','Passed'),
+                       ('skip','Filtered out'), ('all','Everything')] %}
+    <a class="subtab" href="/?show={{ key }}"
+       {% if show == key %}aria-current="page"{% endif %}>{{ name }}<span
+       class="n">{{ counts[key] }}</span></a>
+  {% endfor %}
+</div>
+
+<form class="filters" method="get" action="/">
+  <input type="hidden" name="show" value="{{ show }}">
+  <input class="grow" type="search" name="q" value="{{ q }}"
+         placeholder="Search titles, companies, reasons" aria-label="Search postings">
+  <select name="verdict" aria-label="Filter by verdict">
+    <option value="">Any verdict</option>
+    {% for v in ['APPLY','MAYBE','SKIP'] %}
+      <option value="{{ v }}" {{ 'selected' if verdict == v }}>{{ v|title }}</option>
+    {% endfor %}
+    <option value="unread" {{ 'selected' if verdict == 'unread' }}>Not read yet</option>
+  </select>
+  <select name="loc" aria-label="Filter by location">
+    <option value="">Anywhere</option>
+    {% for t in loc_order %}
+      <option value="{{ t }}" {{ 'selected' if loc == t }}>{{ loc_label[t] }}</option>
+    {% endfor %}
+  </select>
+  <select name="company" aria-label="Filter by company">
+    <option value="">All companies</option>
+    {% for c in firms %}
+      <option value="{{ c }}" {{ 'selected' if company == c }}>{{ c }}</option>
+    {% endfor %}
+  </select>
+  <button class="go">Filter</button>
+  {% if q or verdict or loc or company %}
+    <a class="chip" href="/?show={{ show }}">Clear</a>
+  {% endif %}
+</form>
+{% endblock %}
+
+{% block body %}
+
+{% if state.running %}
+  <section class="run" aria-live="polite">
+    <div class="run-head">
+      <span class="label">{{ state.task }}</span>
+      <span class="num" id="run-count" style="font-size:12.5px;color:var(--muted)">
+        {{ state.done }}{% if state.total %} of {{ state.total }}{% endif %}</span>
+    </div>
+    <div class="meter"><i id="meter" style="--p: {{ (100 * state.done / state.total) if state.total else 0 }}%"></i></div>
+    <pre class="stream" id="stream">{{ state.log[-25:] | join('\n') }}</pre>
+  </section>
+{% else %}
+  <section class="run">
+    <div class="run-head">
+      <span class="label">Read more postings</span>
+      <span class="cost">
+        {% if not scorer %}
+          <b style="color:var(--caution)">No scorer configured.</b>
+          Reading would fetch each posting but leave it unjudged. Set
+          <span class="num">ANTHROPIC_API_KEY</span> before
+          <span class="num">docker compose up</span>, or run the app outside
+          Docker to use your <span class="num">claude</span> login.
+        {% elif funnel.unread %}
+          {{ funnel.unread }} left to read — one model call each,
+          about <span class="num">{{ (tokens_per_job / 1000) | round(1) }}k</span> tokens per posting.
+        {% else %}
+          Every open posting has been read. Check the boards for new ones.
+        {% endif %}
+      </span>
+      <span class="spacer" style="flex:1"></span>
+      {% for n in [10, 25, 100] %}
+        <form method="post" action="/score">
+          <input type="hidden" name="limit" value="{{ n }}">
+          <input type="hidden" name="back" value="{{ back }}">
+          <button {{ 'disabled' if not funnel.unread or not scorer }}>
+            Read {{ n }}<span class="cost num" style="margin-left:5px">
+              ≈{{ (n * tokens_per_job / 1000) | round | int }}k</span></button>
+        </form>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+
+{% if show == 'queue' and not (q or verdict or loc or company) %}
+  <p class="note-p">Open postings you haven't decided on, best fit first. Verdicts
+    come from reading each posting in full and judging <em>role fit only</em> —
+    stack, level, language bar. Where a job is and what it demands of you sits on
+    the <em>what it takes</em> line, so a Berlin role can still be an Apply.
+    Nothing here runs a model until you ask.
+    Keys: <kbd>j</kbd> <kbd>k</kbd> to move, <kbd>a</kbd> applied,
+    <kbd>i</kbd> interested, <kbd>x</kbd> pass, <kbd>o</kbd> open, <kbd>/</kbd> search.</p>
+{% endif %}
+
+{% set below = namespace(shown=false) %}
+{% for j in jobs %}
+  {% if j.verdict == 'SKIP' and not below.shown and show != 'skip' %}
+    {% set below.shown = true %}
+    <div class="floor-rule"><span class="label">Below the line — filtered out</span></div>
+  {% endif %}
+  <article class="job v-{{ j.verdict or 'none' }}" tabindex="-1"
+           data-company="{{ j.company }}" data-job="{{ j.job_id }}" data-url="{{ j.url }}">
+    <div class="pad">
+      <div class="job-top">
+        <div style="flex:1;min-width:0">
+          <h2><a href="{{ j.url }}" target="_blank" rel="noopener">{{ j.title }}</a></h2>
+          <p class="meta"><b>{{ j.company }}</b>{% if j.location %} · {{ j.location }}{% endif %}
+            {%- if j.status != 'new' %} · {{ j.status }}{% endif %}</p>
+        </div>
+        <span class="verdict">{{ j.verdict or 'not read' }}</span>
+        <span class="rail" data-tier="{{ j.loc_tier }}"
+              title="{{ loc_label.get(j.loc_tier, 'Location unclear') }}"
+              role="img" aria-label="Reachability: {{ loc_label.get(j.loc_tier, 'unclear') }}">
+          {% set ranks = {'remote':1,'local':2,'commutable':3,'relocate':4,'abroad':5,'unknown':0} %}
+          {% for n in range(1, 6) %}<i class="{{ 'on' if n <= ranks.get(j.loc_tier, 0) }}"></i>{% endfor %}
+          <span class="rail-txt">{{ loc_label.get(j.loc_tier, '—') }}</span>
+        </span>
+      </div>
+
+      {% if j.reason %}<p class="reason">{{ j.reason }}</p>{% endif %}
+      {% if j.blockers and j.blockers not in ('NONE', '') %}
+        <p class="blockers"><span class="label">Blockers</span>{{ j.blockers }}</p>{% endif %}
+      {% if j.logistics and j.logistics not in ('NONE', '') %}
+        <p class="logi"><span class="label">What it takes</span>{{ j.logistics }}</p>{% endif %}
+      {% if j.note %}<p class="note-shown">{{ j.note }}</p>{% endif %}
+
+      <div class="acts">
+        {% for value, name in [('applied','Applied'), ('interested','Interested'),
+                               ('dismissed','Pass'), ('new','Undecided')] %}
+          {% if j.status != value %}
+            <form method="post" action="/status">
+              <input type="hidden" name="company" value="{{ j.company }}">
+              <input type="hidden" name="job_id" value="{{ j.job_id }}">
+              <input type="hidden" name="status" value="{{ value }}">
+              <input type="hidden" name="back" value="{{ back }}">
+              <button>{{ name }}</button>
+            </form>
+          {% endif %}
+        {% endfor %}
+        <span class="spacer"></span>
+        <a class="btn" href="{{ j.url }}" target="_blank" rel="noopener">Open posting ↗</a>
+      </div>
+
+      <details class="more">
+        <summary>{% if j.jd_text and j.jd_text|length > 200
+                    %}Full posting and notes{% else %}Notes{% endif %}</summary>
+        {% if j.jd_text and j.jd_text|length > 200 %}
+          <div class="jd-body">{{ j.jd_text }}</div>
+        {% endif %}
+        <form class="note-form" method="post" action="/note">
+        <input type="hidden" name="company" value="{{ j.company }}">
+        <input type="hidden" name="job_id" value="{{ j.job_id }}">
+        <input type="hidden" name="back" value="{{ back }}">
+        <input name="note" value="{{ j.note or '' }}" placeholder="Add a note"
+               aria-label="Note for {{ j.title }}">
+          <button>Save</button>
+        </form>
+      </details>
+    </div>
+  </article>
+{% endfor %}
+
+{% if not jobs %}
+  <div class="empty">
+    {% if q or verdict or loc or company %}
+      <p class="big">No postings match those filters.</p>
+      <p><a class="btn" href="/?show={{ show }}">Clear the filters</a></p>
+    {% elif show == 'queue' %}
+      <p class="big">Nothing left to decide.</p>
+      <p>Check the boards for new postings, or read the ones still unread.</p>
+    {% else %}
+      <p class="big">Nothing here yet.</p>
+      <p>Decisions you make in the queue will show up on this tab.</p>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% if pages > 1 %}
+  <nav class="pager" aria-label="Pages">
+    {% if page > 0 %}<a class="btn" href="/?{{ qs }}&amp;page={{ page - 1 }}">← Newer</a>{% endif %}
+    <span class="btn" style="cursor:default;border-color:transparent">
+      <span class="num">{{ page + 1 }}</span> of <span class="num">{{ pages }}</span>
+      · <span class="num">{{ total }}</span> postings</span>
+    {% if page + 1 < pages %}<a class="btn" href="/?{{ qs }}&amp;page={{ page + 1 }}">Older →</a>{% endif %}
+  </nav>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Keyboard triage. j/k move, a/i/x decide, o opens, / focuses search.
+(function () {
+  var cards = [].slice.call(document.querySelectorAll(".job")), at = -1;
+  function focus(i) {
+    if (!cards.length) return;
+    at = Math.max(0, Math.min(i, cards.length - 1));
+    cards.forEach(function (c) { c.classList.remove("is-focus"); });
+    var c = cards[at];
+    c.classList.add("is-focus");
+    c.scrollIntoView({ block: "center", behavior:
+      matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }
+  function decide(status) {
+    if (at < 0) return;
+    var c = cards[at];
+    var f = c.querySelector('form[action="/status"] input[value="' + status + '"]');
+    if (f) f.form.submit();
+  }
+  document.addEventListener("keydown", function (e) {
+    var t = e.target.tagName;
+    if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT") {
+      if (e.key === "Escape") e.target.blur();
+      return;
+    }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    switch (e.key) {
+      case "j": case "ArrowDown": e.preventDefault(); focus(at + 1); break;
+      case "k": case "ArrowUp":   e.preventDefault(); focus(at - 1); break;
+      case "a": decide("applied"); break;
+      case "i": decide("interested"); break;
+      case "x": decide("dismissed"); break;
+      case "o": if (at >= 0) window.open(cards[at].dataset.url, "_blank", "noopener"); break;
+      case "/": e.preventDefault();
+        document.querySelector('input[name="q"]').focus(); break;
+    }
+  });
+})();
+</script>
+{% endblock %}
