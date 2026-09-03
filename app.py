@@ -111,8 +111,20 @@ TABS = {
     "skip": "closed_at IS NULL AND verdict='SKIP'",
     "all": "closed_at IS NULL",
 }
+# A working-student/intern posting is read for local commute range first —
+# Darmstadt/Frankfurt, loc_rank 1-2. Full-time roles anywhere in Germany
+# (loc_rank up to 'relocate') are fine as-is, so only students/interns whose
+# posting sits outside that commute range get pushed down — not cut, since a
+# strong one further out is still worth seeing, just not first.
+STUDENT_TITLE = (
+    "(title LIKE '%werkstudent%' OR title LIKE '%working student%'"
+    " OR title LIKE '%intern%' OR title LIKE '%praktik%'"
+    " OR title LIKE '%thesis%' OR title LIKE '%abschlussarbeit%'"
+    " OR title LIKE '%graduate%' OR title LIKE '%new grad%')")
 ORDER = ("CASE verdict WHEN 'APPLY' THEN 0 WHEN 'MAYBE' THEN 1"
-         " WHEN 'SKIP' THEN 3 ELSE 2 END, loc_rank, first_seen DESC")
+         " WHEN 'SKIP' THEN 3 ELSE 2 END,"
+         f" CASE WHEN loc_rank NOT IN (1, 2) AND {STUDENT_TITLE}"
+         " THEN loc_rank + 3 ELSE loc_rank END, first_seen DESC")
 PAGE = 60
 
 
@@ -191,12 +203,13 @@ except ImportError:
 
 
 @app.get("/apply", response_class=HTMLResponse)
-def apply_desk(request: Request):
+def apply_desk(request: Request, sort: str = "default"):
     """What each form wants, and which documents actually exist on disk."""
     cvwork = core.CVWORK
     con = core.db()
     rows = [dict(r) for r in con.execute(
-        "SELECT p.*, j.title, j.location, j.status, j.verdict, j.url, j.loc_tier"
+        "SELECT p.*, j.title, j.location, j.status, j.verdict, j.url,"
+        " j.loc_tier, j.loc_rank"
         " FROM prep p JOIN jobs j USING (company, job_id)"
         " WHERE j.closed_at IS NULL ORDER BY p.company, j.title")]
     con.close()
@@ -212,11 +225,24 @@ def apply_desk(request: Request):
         r["cv_ok"] = (cvwork / cv_file).exists()
         needs_letter = r["letter"] in ("optional", "required")
         r["ready"] = r["cv_ok"] and r["answers_ok"] and (r["letter_ok"] or not needs_letter)
-    rows.sort(key=lambda r: (r["status"] == "applied", not r["ready"], r["company"]))
+    if sort == "prio":
+        # Work through the reachable, ready-to-go ones first: closest location,
+        # nothing missing, alphabetical after that just to be stable. A
+        # working-student/intern posting outside the local commute range
+        # (loc_rank 1/2) sorts as if it were a tier further out — full-time
+        # roles anywhere in Germany need no such penalty.
+        def prio_key(r):
+            rank = r["loc_rank"] if r["loc_rank"] is not None else 9
+            if rank not in (1, 2) and core.CV_STUDENT.search(r["title"] or ""):
+                rank += 3
+            return (r["status"] == "applied", not r["ready"], rank, r["company"])
+        rows.sort(key=prio_key)
+    else:
+        rows.sort(key=lambda r: (r["status"] == "applied", not r["ready"], r["company"]))
 
     return templates.TemplateResponse(request, "apply.html", {
         "rows": rows, "state": state, "funnel": funnel(), "counts": counts(),
-        "loc_label": core.LOCATION_LABEL, "scorer": core.scorer(),
+        "loc_label": core.LOCATION_LABEL, "scorer": core.scorer(), "sort": sort,
         "ready": sum(1 for r in rows if r["ready"] and r["status"] != "applied"),
         "sent": sum(1 for r in rows if r["status"] == "applied"),
         "gaps": sum(1 for r in rows if not r["ready"]),
@@ -241,7 +267,7 @@ def shortlist(request: Request, target: int = SHORTLIST_TARGET):
     con = core.db()
     rows = [dict(r) for r in con.execute(
         "SELECT * FROM jobs WHERE closed_at IS NULL AND status='new'"
-        " AND verdict IN ('APPLY','MAYBE') AND loc_tier != 'abroad'"
+        " AND verdict IN ('APPLY','MAYBE') AND loc_tier NOT IN ('abroad','unknown')"
         f" ORDER BY {ORDER}")]
     sent = [dict(r) for r in con.execute(
         "SELECT * FROM jobs WHERE status='applied' ORDER BY status_at DESC LIMIT 60")]

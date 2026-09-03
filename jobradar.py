@@ -212,7 +212,7 @@ NOISE = re.compile(
     r"außendienst|aussendienst|praktikum sales|working student sales|"
     r"technician|mechanic|logistik|lager|fahrer|driver|einkauf|procurement specialist)\b",
     re.I)
-SENIOR = re.compile(r"\b(senior|staff|principal|lead|head of|director|vp |chief|manager)\b", re.I)
+SENIOR = re.compile(r"\b(staff|principal|lead|head of|director|vp |chief|manager)\b", re.I)
 
 
 def prefilter(jobs):

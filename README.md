@@ -15,6 +15,51 @@ this yours — see each file's comments for what to fill in.
 
 ---
 
+## How it's built
+
+```mermaid
+flowchart LR
+    subgraph Sources["Company career pages"]
+        A1[Ashby / Greenhouse / Lever /<br/>Personio / Recruitee /<br/>SmartRecruiters / Workable APIs]
+        A2[JSON-LD JobPosting]
+        A3[Chrome-rendered fallback<br/>for JS-only boards]
+    end
+
+    A1 & A2 & A3 --> B[Sweep<br/><i>stdlib HTTP, no model calls</i>]
+    B --> C[(SQLite<br/>jobradar.sqlite3)]
+    C --> D{Title filter}
+    D -->|sales / senior / lead / etc| E[SKIP on sight<br/>— no LLM call]
+    D -->|plausible role| F[Fetch full job description]
+    F --> G[Score with Claude<br/>against profile_local.py]
+    G --> C
+    C --> H[Location tiers<br/>remote → home city → commute →<br/>relocate → abroad]
+    H --> I[FastAPI + Jinja2 web app]
+    I --> J((You:<br/>Queue / Send list / Apply desk))
+```
+
+**Stack:** Python 3.12, FastAPI + Uvicorn (web app), Jinja2 (templates),
+SQLite via the stdlib `sqlite3` module — no ORM, no ODBC/Postgres/etc, just a
+single-file database (`jobradar.sqlite3`, ~20 MB for ~14k tracked postings).
+Fetching uses only `urllib` from the standard library — no `requests`,
+no scraping framework — with a headless Chromium fallback (via Docker) for
+the handful of boards that build their job list client-side in JavaScript.
+Scoring calls `claude-opus-5` — either through the `claude` CLI if it's on
+your PATH (no API key needed, uses your existing login) or the `anthropic`
+Python SDK inside Docker. Packaging is a single `Dockerfile` (`python:3.12-slim`
++ Chromium) with `docker-compose` for local runs.
+
+**What's stored, and what isn't:** every posting's title, location, and URL
+are recorded so the app can tell new from already-seen and mark postings
+closed once they vanish from a board — that part is cheap and kept for
+everything. The *expensive* part — fetching the full job-description text and
+spending a model call on it — only happens for postings that clear both the
+title filter and the location tiers (i.e. it's not classified `abroad`).
+Nothing about you — your profile, your target companies, your application
+history — ever leaves this repo's `data/` directory (gitignored) except in
+the scoring prompt itself, which is sent to Anthropic to produce a verdict.
+
+---
+
 ## The web app (recommended)
 
 ```sh

@@ -53,10 +53,13 @@ ABROAD = re.compile(
     r"sunnyvale|tokyo|gurugram|lima|buenos aires|santiago|bogot(?:á|a)|almaty|"
     r"washington|arlington|tirana|lisboa|lisbon|malm(?:ö|o)|budapest|nantes|"
     r"levallois|marseille|ia(?:ș|s)i|gda(?:ń|n)sk|krak(?:ó|o)w|wroc(?:ł|l)aw|"
-    r"portugal|spain|france|poland|netherlands|romania|hungary|bulgaria|"
+    r"portugal|spain|france|belgium|poland|netherlands|romania|hungary|bulgaria|"
     r"italy|greece|serbia|ukraine|turkey|egypt|kenya|nigeria|vietnam|thailand|"
     r"indonesia|malaysia|taiwan|korea|chile|peru|argentina|colombia|"
-    r"bristol|edinburgh|glasgow|leeds|birmingham|uk)\b", re.I)
+    r"bristol|edinburgh|glasgow|leeds|birmingham|uk|"
+    r"wien|vienna|linz|graz|salzburg|austria|"
+    r"z(?:ü|ue|u)rich|basel|bern|geneva|gen(?:è|e)ve|lausanne|switzerland|"
+    r"casablanca|rabat|morocco|tunisia|algeria)\b", re.I)
 
 # Continent-scoped "remote" that is not remote for someone in Germany. Checked
 # BEFORE the remote pattern, because "Home Based - Americas" matches both and
@@ -64,9 +67,14 @@ ABROAD = re.compile(
 # well (e.g. "Home Based - Americas; Home based - EMEA") is genuinely open to
 # him, so those are excluded here and fall through to the remote tier.
 NON_EU_REMOTE = re.compile(
-    r"\b(americas|latam|apac|north america|us timezones?|"
+    r"\b(americas|latam|apac|north america|us timezones?|\bus\b|"
     r"united states|usa|canada|mexico|brazil|argentina|colombia|"
-    r"philippines|india|japan|australia|new zealand|south africa)\b", re.I)
+    r"philippines|india|japan|australia|new zealand|south africa|"
+    # US states and Canadian provinces named without a country word, seen on
+    # postings like "Remote, US, Massachusetts" that the bare US/state check
+    # above would otherwise miss if written as just the state/province name.
+    r"massachusetts|california|texas|colorado|new york|washington state|"
+    r"alberta|british columbia|manitoba|nova scotia|ontario|quebec)\b", re.I)
 EU_ANCHOR = re.compile(r"\bemea\b|\beurope\b|european union|worldwide|\bglobal\b|"
                        r"germany|deutschland", re.I)
 
@@ -84,6 +92,11 @@ def classify_location(text):
             if best is None or rank < best[1]:
                 best = (tier, rank)
     if best:
+        # "Anywhere in France, Belgium, Spain" matches the remote tier's
+        # \banywhere\b, but it is not open to him at all — it names specific
+        # non-German countries and nothing anchors it back to Germany/EU-wide.
+        if best[0] == "remote" and ABROAD.search(t) and not EU_ANCHOR.search(t):
+            return "abroad", 5
         return best
     if ABROAD.search(t):
         return "abroad", 5
@@ -230,10 +243,19 @@ YEARS_REQ = re.compile(
     r"\s*\+?\s*(?:years|jahre)", re.I)
 
 
+# A posting that's itself written in English, even one line stating "German
+# required", tends not to enforce that in practice — English is evidently the
+# working language. Only auto-SKIP the German requirement when the posting is
+# actually written in German; otherwise let the model weigh it (MAYBE/logistics)
+# rather than a free regex bounce.
+GERMAN_JD = re.compile(r"\b(und|der|die|das|ist|mit|für|wir|werden|sowie|"
+                        r"unser|unsere|sie|dich|deine|erfahrung|kenntnisse)\b", re.I)
+
+
 def hard_block(jd):
     """A quoted, stated blocker — or None. Saves a model call when it fires."""
     m = GERMAN_REQ.search(jd or "")
-    if m:
+    if m and len(GERMAN_JD.findall(jd or "")) >= 5:
         return "German requirement in the posting: " + m.group(0).strip()[:80]
     for m in YEARS_REQ.finditer(jd or ""):
         if YEARS_RANGE.search(jd[max(0, m.start() - 24):m.end() + 4]):
