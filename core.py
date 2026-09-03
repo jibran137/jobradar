@@ -127,6 +127,8 @@ CREATE TABLE IF NOT EXISTS jobs(
     note        TEXT,
     status_at   TEXT,
     logistics   TEXT,
+    posted_at   TEXT,   -- when the company says it posted the role (per its ATS);
+                        -- NULL where the source (Personio, generic render) doesn't say
     PRIMARY KEY(company, job_id)
 );
 CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status);
@@ -161,6 +163,12 @@ def db():
     con = sqlite3.connect(DB_PATH, timeout=30)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    # Column added after the table already existed on disk for early users —
+    # CREATE TABLE IF NOT EXISTS above won't retrofit it, so migrate by hand.
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(jobs)")}
+    if "posted_at" not in cols:
+        con.execute("ALTER TABLE jobs ADD COLUMN posted_at TEXT")
+        con.commit()
     return con
 
 
@@ -534,9 +542,14 @@ def sweep(fetch_descriptions=True, score=True, only=None, limit=60, log=print):
         key = (j["company"], j["id"])
         tier, rank = classify_location(j.get("location"))
         if key in known:
+            # posted_at is filled in only if still missing — it's the ATS's
+            # own stated post date, which doesn't change on a re-fetch, and
+            # this also backfills rows that predate the posted_at column.
             con.execute("UPDATE jobs SET last_seen=?, closed_at=NULL, location=?,"
-                        " loc_tier=?, loc_rank=? WHERE company=? AND job_id=?",
-                        (started, j.get("location", ""), tier, rank, *key))
+                        " loc_tier=?, loc_rank=?,"
+                        " posted_at=COALESCE(posted_at, ?) WHERE company=? AND job_id=?",
+                        (started, j.get("location", ""), tier, rank,
+                         j.get("posted_at"), *key))
         else:
             # Titles that are plainly out of scope are marked SKIP on sight, so
             # they never reach the queue or cost an LLM call. The reason says so.
@@ -545,12 +558,12 @@ def sweep(fetch_descriptions=True, score=True, only=None, limit=60, log=print):
             con.execute(
                 "INSERT INTO jobs(company, job_id, title, location, url, first_seen,"
                 " last_seen, loc_tier, loc_rank, status, verdict, blockers, reason,"
-                " scored_at) VALUES(?,?,?,?,?,?,?,?,?,'new',?,?,?,?)",
+                " scored_at, posted_at) VALUES(?,?,?,?,?,?,?,?,?,'new',?,?,?,?,?)",
                 (j["company"], j["id"], j["title"], j.get("location", ""),
                  j["url"], started, started, tier, rank,
                  "SKIP" if noise else None, "NONE" if noise else None,
                  f"Filtered on title: {noise}." if noise else None,
-                 started if noise else None))
+                 started if noise else None, j.get("posted_at")))
             new_rows.append(key)
     # Postings that vanished from a board are closed, not deleted. Only companies
     # actually polled this run are considered — otherwise a filtered sweep would

@@ -12,6 +12,7 @@ import asyncio
 import json
 import os
 import re
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -21,6 +22,28 @@ import core
 import jobradar as jr
 
 templates = Jinja2Templates(directory=str(core.HERE / "templates"))
+
+
+def _ago(iso):
+    """'3d ago' from an ISO timestamp, for the posted/added-to-app lines."""
+    if not iso:
+        return None
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    hours = (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+    if hours < 1:
+        return "just now"
+    if hours < 24:
+        return f"{int(hours)}h ago"
+    days = int(hours / 24)
+    return f"{days}d ago" if days < 60 else dt.date().isoformat()
+
+
+templates.env.filters["ago"] = _ago
 
 # Measured from the postings already fetched: ~5.1k chars of description plus
 # ~1.5k of profile and instructions, at roughly 3.8 chars per token.
@@ -156,7 +179,8 @@ def counts():
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, show: str = "queue", q: str = "",
-          verdict: str = "", loc: str = "", company: str = "", page: int = 0):
+          verdict: str = "", loc: str = "", company: str = "", posted: str = "",
+          page: int = 0):
     where = [TABS.get(show, TABS["queue"])]
     args = []
     if q:
@@ -172,6 +196,12 @@ def index(request: Request, show: str = "queue", q: str = "",
     if company:
         where.append("company = ?")
         args.append(company)
+    if posted and posted.isdigit():
+        # Posted date per the company's own ATS where it states one; falls
+        # back to first_seen (when we found it) for sources that don't
+        # (Personio, the generic render fallback) rather than hiding them.
+        where.append("COALESCE(posted_at, first_seen) >= datetime('now', ?)")
+        args.append(f"-{int(posted)} days")
     clause = "WHERE " + " AND ".join(where)
 
     con = core.db()
@@ -186,7 +216,7 @@ def index(request: Request, show: str = "queue", q: str = "",
     return templates.TemplateResponse(request, "index.html", {
         "jobs": jobs, "show": show, "counts": counts(), "funnel": funnel(),
         "state": state, "loc_label": core.LOCATION_LABEL, "firms": firms,
-        "q": q, "verdict": verdict, "loc": loc, "company": company,
+        "q": q, "verdict": verdict, "loc": loc, "company": company, "posted": posted,
         "page": page, "total": total, "pages": (total + PAGE - 1) // PAGE,
         "tokens_per_job": TOKENS_PER_JOB, "scorer": core.scorer(),
         "loc_order": ["remote", "local", "commutable", "relocate", "abroad"],

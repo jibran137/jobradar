@@ -67,7 +67,8 @@ def render(url, timeout=90):
 def p_ashby(c):
     d = get_json(f"https://api.ashbyhq.com/posting-api/job-board/{c['slug']}")
     return [{"id": j["id"], "title": j["title"],
-             "location": j.get("location") or "", "url": j.get("jobUrl") or c["url"]}
+             "location": j.get("location") or "", "url": j.get("jobUrl") or c["url"],
+             "posted_at": j.get("publishedAt")}
             for j in d.get("jobs", []) if j.get("isListed", True)]
 
 
@@ -75,7 +76,8 @@ def p_greenhouse(c):
     d = get_json(f"https://boards-api.greenhouse.io/v1/boards/{c['slug']}/jobs")
     return [{"id": str(j["id"]), "title": j["title"],
              "location": (j.get("location") or {}).get("name", ""),
-             "url": j.get("absolute_url") or c["url"]}
+             "url": j.get("absolute_url") or c["url"],
+             "posted_at": j.get("first_published")}
             for j in d.get("jobs", [])]
 
 
@@ -83,13 +85,18 @@ def p_lever(c):
     d = get_json(f"https://api.lever.co/v0/postings/{c['slug']}?mode=json")
     return [{"id": j["id"], "title": j["text"],
              "location": (j.get("categories") or {}).get("location", ""),
-             "url": j.get("hostedUrl") or c["url"]} for j in d]
+             "url": j.get("hostedUrl") or c["url"],
+             # epoch milliseconds -> ISO date
+             "posted_at": (datetime.fromtimestamp(j["createdAt"] / 1000, tz=timezone.utc)
+                           .isoformat(timespec="seconds") if j.get("createdAt") else None)}
+            for j in d]
 
 
 def p_recruitee(c):
     d = get_json(f"https://{c['slug']}.recruitee.com/api/offers/")
     return [{"id": str(j["id"]), "title": j["title"],
-             "location": j.get("location") or "", "url": j.get("careers_url") or c["url"]}
+             "location": j.get("location") or "", "url": j.get("careers_url") or c["url"],
+             "posted_at": j.get("published_at")}
             for j in d.get("offers", [])]
 
 
@@ -97,14 +104,16 @@ def p_smartrecruiters(c):
     d = get_json(f"https://api.smartrecruiters.com/v1/companies/{c['slug']}/postings?limit=100")
     return [{"id": j["id"], "title": j["name"],
              "location": (j.get("location") or {}).get("city", ""),
-             "url": j.get("ref") or c["url"]} for j in d.get("content", [])]
+             "url": j.get("ref") or c["url"],
+             "posted_at": j.get("releasedDate")} for j in d.get("content", [])]
 
 
 def p_workable(c):
     d = get_json(f"https://apply.workable.com/api/v1/widget/accounts/{c['slug']}?details=true")
     return [{"id": j["shortcode"], "title": j["title"],
              "location": j.get("location", {}).get("city", "") if isinstance(j.get("location"), dict) else str(j.get("location") or ""),
-             "url": j.get("application_url") or j.get("url") or c["url"]}
+             "url": j.get("application_url") or j.get("url") or c["url"],
+             "posted_at": j.get("published_on")}
             for j in d.get("jobs", [])]
 
 
@@ -147,6 +156,7 @@ def _from_jsonld(html, fallback_url):
                         "title": o["title"],
                         "location": addr.get("addressLocality", "") if isinstance(addr, dict) else "",
                         "url": o.get("url") or fallback_url,
+                        "posted_at": o.get("datePosted"),
                     })
                 stack.extend(o.values())
     return jobs

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% set qs = "show=" ~ show ~ "&q=" ~ q ~ "&verdict=" ~ verdict ~ "&loc=" ~ loc ~ "&company=" ~ company %}
+{% set qs = "show=" ~ show ~ "&q=" ~ q ~ "&verdict=" ~ verdict ~ "&loc=" ~ loc ~ "&company=" ~ company ~ "&posted=" ~ posted %}
 {% set back = "/?" ~ qs ~ "&page=" ~ page %}
 
 {% block tabs %}
@@ -36,8 +36,15 @@
       <option value="{{ c }}" {{ 'selected' if company == c }}>{{ c }}</option>
     {% endfor %}
   </select>
+  <select name="posted" aria-label="Filter by when posted">
+    <option value="">Posted anytime</option>
+    {% for d, label in [('1','Last 24h'), ('3','Last 3 days'), ('7','Last week'),
+                         ('14','Last 2 weeks'), ('30','Last month')] %}
+      <option value="{{ d }}" {{ 'selected' if posted == d }}>{{ label }}</option>
+    {% endfor %}
+  </select>
   <button class="go">Filter</button>
-  {% if q or verdict or loc or company %}
+  {% if q or verdict or loc or company or posted %}
     <a class="chip" href="/?show={{ show }}">Clear</a>
   {% endif %}
 </form>
@@ -110,6 +117,8 @@
         <div style="flex:1;min-width:0">
           <h2><a href="{{ j.url }}" target="_blank" rel="noopener">{{ j.title }}</a></h2>
           <p class="meta"><b>{{ j.company }}</b>{% if j.location %} · {{ j.location }}{% endif %}
+            {%- if j.posted_at|ago %} · posted {{ j.posted_at|ago }}{% endif -%}
+            {%- if j.first_seen|ago %} · found {{ j.first_seen|ago }}{% endif %}
             {%- if j.status != 'new' %} · {{ j.status }}{% endif %}</p>
         </div>
         <span class="verdict">{{ j.verdict or 'not read' }}</span>
