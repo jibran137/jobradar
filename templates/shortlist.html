@@ -56,7 +56,9 @@
                     min-width:2.2ch">{{ loop.index }}</span>
         <div style="flex:1;min-width:0">
           <h2><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.company }}</a></h2>
-          <p class="meta">{{ r.title }}{% if r.location %} · {{ r.location }}{% endif %}</p>
+          <p class="meta">{{ r.title }}{% if r.location %} · {{ r.location }}{% endif %}
+            {%- if r.posted_at|ago %} · posted {{ r.posted_at|ago }}{% endif -%}
+            {%- if r.first_seen|ago %} · found {{ r.first_seen|ago }}{% endif %}</p>
         </div>
         <div class="rail" data-tier="{{ r.loc_tier }}" title="{{ loc_label.get(r.loc_tier, '') }}">
           {% set filled = {'remote': 4, 'local': 4, 'commutable': 3,
