@@ -283,7 +283,7 @@ SHORTLIST_TARGET = 40
 
 
 @app.get("/shortlist", response_class=HTMLResponse)
-def shortlist(request: Request, target: int = SHORTLIST_TARGET):
+def shortlist(request: Request, target: int = SHORTLIST_TARGET, sort: str = "default"):
     """A day's sending list: one role per company, best fit first.
 
     The queue is posting-shaped, but the unit of work is the application — and
@@ -327,6 +327,11 @@ def shortlist(request: Request, target: int = SHORTLIST_TARGET):
         else:
             reachable.append(r)
 
+    if sort == "found":
+        # Newest-found-first — same "one role per company" set as the default
+        # view, just re-ordered so what showed up most recently sends first.
+        reachable.sort(key=lambda r: r["first_seen"], reverse=True)
+
     # Which CV to send is decidable from the posting; whether the form wants a
     # cover letter is not, so that stays blank until the form is opened. The
     # letter column reports only what already exists on disk in cvwork/.
@@ -342,7 +347,7 @@ def shortlist(request: Request, target: int = SHORTLIST_TARGET):
         "list": reachable[:target], "bench": reachable[target:], "cut": cut,
         "sent": sent, "target": target, "state": state, "funnel": funnel(),
         "counts": counts(), "loc_label": core.LOCATION_LABEL,
-        "scorer": core.scorer(),
+        "scorer": core.scorer(), "sort": sort,
         "n_apply": sum(1 for r in reachable[:target] if r["verdict"] == "APPLY"),
         "n_companies": len(seen),
     })
