@@ -340,6 +340,8 @@ def shortlist(request: Request, target: int = SHORTLIST_TARGET, sort: str = "def
         name, path, hint = CV_TRACKS.get(track, CV_TRACKS["general"])
         r["cv_track"], r["cv_why"], r["cv_name"], r["cv_hint"] = track, why, name, hint
         r["cv_ok"] = (core.CVWORK / path).exists()
+        r["ats_score"], r["ats_matched"], r["ats_missing"] = core.ats_match(
+            r["jd_text"], core.CVWORK / path)
         r["letter_pdf"] = core.letter_for(r["company"])
         r["checked"] = prepped.get((r["company"], r["job_id"]))
 

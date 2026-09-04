@@ -327,6 +327,100 @@ def letter_for(company):
     return None
 
 
+# ------------------------------------------------------------- ATS keyword match
+
+# The verdict judges fit by reading the posting in full; a keyword-scoring ATS
+# does something dumber — literal string matching against the CV text — and a
+# real skill described in the CV's own words can still lose to that. This
+# checks the same terms a keyword ATS would, so a gap shows up before the
+# posting rejects a candidate the verdict already approved.
+ATS_VOCAB = (
+    ("Frontend", r"front[- ]?end"),
+    ("Backend", r"back[- ]?end"),
+    ("Full-stack", r"full[- ]?stack"),
+    ("Python", r"\bpython\b"),
+    ("JavaScript", r"java\s?script|\bjs\b"),
+    ("TypeScript", r"type\s?script"),
+    ("React", r"\breact\b"),
+    ("Next.js", r"next\.?js"),
+    ("Node.js", r"node\.?js"),
+    ("Vue", r"\bvue\b"),
+    ("FastAPI", r"fastapi"),
+    ("Flask", r"\bflask\b"),
+    ("Django", r"\bdjango\b"),
+    ("Postgres", r"postgres(?:ql)?"),
+    ("SQL", r"\bsql\b"),
+    ("MongoDB", r"\bmongo(?:db)?\b"),
+    ("REST API", r"rest(?:ful)?\s*apis?"),
+    ("GraphQL", r"graphql"),
+    ("Docker", r"\bdocker\b"),
+    ("Kubernetes", r"kubernetes|\bk8s\b"),
+    ("CI/CD", r"ci\s*/\s*cd|continuous (?:integration|deployment)"),
+    ("AWS", r"\baws\b|amazon web services"),
+    ("GCP", r"\bgcp\b|google cloud"),
+    ("Azure", r"\bazure\b"),
+    ("Git", r"\bgit\b"),
+    ("Linux", r"\blinux\b"),
+    ("Machine learning", r"machine learning|\bml\b"),
+    ("LLM", r"\bllms?\b|large language model"),
+    ("RAG", r"\brag\b|retrieval[- ]augmented"),
+    ("OpenAI", r"openai"),
+    ("Data pipeline", r"data pipelin\w*"),
+    ("Real-time", r"real[- ]?time"),
+    ("Low-latency", r"low[- ]?latency"),
+    ("Microservices", r"microservices?"),
+    ("Distributed systems", r"distributed systems?"),
+    ("Dashboards", r"dashboards?"),
+    ("Analytics", r"analytics"),
+    ("Data exploration", r"data exploration"),
+    ("Agile / Scrum", r"\bagile\b|\bscrum\b"),
+    ("Testing", r"unit tests?|\btesting\b|test coverage"),
+)
+ATS_VOCAB = tuple((name, re.compile(pat, re.I)) for name, pat in ATS_VOCAB)
+
+_resume_text_cache = {}
+
+
+def _resume_text(pdf_path):
+    """Plain text of a CV PDF, cached by path + mtime — reread only when the
+    file the CV was last regenerated changes."""
+    p = Path(pdf_path)
+    try:
+        mtime = p.stat().st_mtime
+    except OSError:
+        return ""
+    cached = _resume_text_cache.get(str(p))
+    if cached and cached[0] == mtime:
+        return cached[1]
+    try:
+        from pypdf import PdfReader
+        text = "\n".join(page.extract_text() or "" for page in PdfReader(str(p)).pages)
+        # A PDF line-wrap mid-phrase ("unit\ntests") must not defeat a
+        # multi-word pattern — collapse all whitespace runs to a single space.
+        text = re.sub(r"\s+", " ", text)
+    except Exception:
+        text = ""
+    _resume_text_cache[str(p)] = (mtime, text)
+    return text
+
+
+def ats_match(jd_text, cv_path):
+    """-> (score_pct, matched, missing). Of the ATS_VOCAB terms the posting
+    actually names, which ones does this CV say too — in whatever wording
+    ATS_VOCAB canonicalises, not necessarily the posting's exact phrasing.
+    score_pct is None when the posting names none of them."""
+    jd_text = re.sub(r"\s+", " ", jd_text or "")
+    resume = _resume_text(cv_path)
+    matched, missing = [], []
+    for name, rx in ATS_VOCAB:
+        if not rx.search(jd_text):
+            continue
+        (matched if rx.search(resume) else missing).append(name)
+    total = len(matched) + len(missing)
+    score = round(100 * len(matched) / total) if total else None
+    return score, matched, missing
+
+
 # --------------------------------------------------------------- reachability
 
 # The verdict judges role fit alone — deliberately, so that geography is not

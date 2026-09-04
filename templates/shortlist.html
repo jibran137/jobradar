@@ -17,6 +17,11 @@
   needs the form opened. Until then a row says <i>Form not opened</i>, and the
   letter chip reports only what already exists in <span class="num">cvwork/cover_letters/</span>.</p>
 
+<p class="note-p"><b>ATS %</b> is a different question from the verdict — the verdict reads the
+  posting for fit, this reads it the dumb way a keyword-scoring ATS does: which
+  of the terms the posting names literally also appear on the CV that would
+  actually get sent for this row. Hover the chip for what's missing.</p>
+
 <section class="run">
   <div class="run-head">
     <span class="label">On the list</span>
@@ -83,6 +88,12 @@
       <div class="acts" style="margin-top:10px">
         <span class="doc {{ 'on' if r.cv_ok }}" title="{{ r.cv_hint }} — {{ r.cv_why }}">
           {{ '✓' if r.cv_ok else '○' }} CV — {{ r.cv_name }}</span>
+        {% if r.ats_score is not none %}
+          <span class="doc {{ 'on' if r.ats_score >= 80 else ('warn' if r.ats_score >= 50 else 'off') }}"
+                title="Literal-keyword match against the posting — the CV's own terms in the posting's words, not fit.
+{% if r.ats_missing %}Posting names but the CV doesn't say: {{ r.ats_missing|join(', ') }}{% else %}Every term the posting names is in the CV.{% endif %}">
+            ATS {{ r.ats_score }}%</span>
+        {% endif %}
         {% if r.letter_pdf %}
           <span class="doc on" title="{{ r.letter_pdf }}">✓ Letter written</span>
         {% else %}
