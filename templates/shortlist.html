@@ -22,6 +22,11 @@
   of the terms the posting names literally also appear on the CV that would
   actually get sent for this row. Hover the chip for what's missing.</p>
 
+<p class="note-p"><b>Contact</b> is never found automatically — nothing on a posting names
+  who to reach out to. Ask me to look for a hiring manager or team member for a
+  specific row and I'll search, but you confirm the match before it's saved here.
+  You can also just paste a LinkedIn URL you found yourself.</p>
+
 <section class="run">
   <div class="run-head">
     <span class="label">On the list</span>
@@ -105,7 +110,31 @@
           <span class="doc off" title="Nobody has opened this application form yet, so
                 what it asks for is unknown">○ Form not opened</span>
         {% endif %}
+        {% set contact = r.checked or {} %}
+        {% if contact.contact_linkedin %}
+          <a class="doc on" href="{{ contact.contact_linkedin }}" target="_blank" rel="noopener"
+             title="{{ contact.contact_note or 'Saved contact for this application — hand-confirmed, not automated.' }}">
+            ✓ Contact — {{ contact.contact_name or 'saved' }}{% if contact.contact_role %} ({{ contact.contact_role }}){% endif %}</a>
+        {% else %}
+          <span class="doc off" title="Nobody on the team has been found and confirmed for this application yet">○ No contact saved</span>
+        {% endif %}
       </div>
+
+      <details style="margin-top:6px">
+        <summary class="cost" style="cursor:pointer">{{ 'Edit contact' if contact.contact_linkedin else 'Add a contact' }}</summary>
+        <form method="post" action="/contact" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+          <input type="hidden" name="company" value="{{ r.company }}">
+          <input type="hidden" name="job_id" value="{{ r.job_id }}">
+          <input type="hidden" name="back" value="/shortlist?target={{ target }}">
+          <input type="text" name="contact_name" placeholder="Name" style="width:150px"
+                 value="{{ contact.contact_name or '' }}">
+          <input type="text" name="contact_role" placeholder="Role, e.g. Engineering Manager" style="width:200px"
+                 value="{{ contact.contact_role or '' }}">
+          <input type="url" name="contact_linkedin" placeholder="https://linkedin.com/in/…" style="flex:1;min-width:220px"
+                 value="{{ contact.contact_linkedin or '' }}">
+          <button class="go">Save</button>
+        </form>
+      </details>
 
       <div class="acts">
         <a class="btn" href="{{ r.url }}" target="_blank" rel="noopener">Open posting ↗</a>

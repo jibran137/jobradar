@@ -368,9 +368,12 @@ def companies_view(request: Request):
     listed = [{**c, **{k: 0 for k in ("open", "apply", "maybe", "unread")},
                **stats.get(c["company"], {})} for c in core.companies()]
     listed.sort(key=lambda c: (-c["apply"], -c["maybe"], -c["open"]))
+    dead = {d["company"]: d for d in core.dead_boards()}
+    reposts = core.detect_reposts()
     return templates.TemplateResponse(request, "companies.html", {
         "companies": listed, "state": state, "funnel": funnel(),
-        "counts": counts(), "scorer": core.scorer()})
+        "counts": counts(), "scorer": core.scorer(),
+        "dead": dead, "reposts": reposts})
 
 
 # ------------------------------------------------------------------ actions
@@ -396,6 +399,16 @@ async def set_note(company: str = Form(...), job_id: str = Form(...),
                 (note.strip() or None, company, job_id))
     con.commit()
     con.close()
+    return RedirectResponse(back or "/", status_code=303)
+
+
+@app.post("/contact")
+async def save_contact(company: str = Form(...), job_id: str = Form(...),
+                       contact_name: str = Form(""), contact_role: str = Form(""),
+                       contact_linkedin: str = Form(""), contact_note: str = Form(""),
+                       back: str = Form("/")):
+    core.save_contact(company, job_id, contact_name.strip(), contact_role.strip(),
+                      contact_linkedin.strip(), contact_note.strip())
     return RedirectResponse(back or "/", status_code=303)
 
 

@@ -33,7 +33,10 @@
   <tbody>
   {% for c in companies %}
     <tr>
-      <td><a href="/?show=all&amp;company={{ c.company | urlencode }}">{{ c.company }}</a></td>
+      <td><a href="/?show=all&amp;company={{ c.company | urlencode }}">{{ c.company }}</a>
+        {% if c.company in dead %}
+          <span class="doc warn" title="{{ dead[c.company].consecutive_errors }} sweeps in a row failed to fetch this board. Last error: {{ dead[c.company].last_error }}">⚠ dead?</span>
+        {% endif %}</td>
       <td><span class="cost">{{ c.provider }}</span></td>
       <td>{% if c.hardware %}<span class="label"
              style="font-size:9px;color:var(--muted)">hardware</span>{% endif %}</td>
@@ -49,6 +52,33 @@
   </tbody>
 </table>
 </div>
+
+{% if reposts %}
+<p class="note-p" style="margin-top:20px">Same company, same role by word-set, seen under a new job ID
+  more than a day apart — looks like a re-listing, not a new opening. Sibling
+  roles (different city/country/seniority word) and same-sweep duplicates are
+  excluded on purpose; see <span class="num">core.detect_reposts()</span>.</p>
+<div class="panel" style="overflow-x:auto">
+<table>
+  <thead><tr>
+    <th>Company</th><th>Role</th>
+    <th style="text-align:right">Times seen</th>
+    <th>First → last</th><th style="text-align:right">Span</th>
+  </tr></thead>
+  <tbody>
+  {% for r in reposts %}
+    <tr>
+      <td>{{ r.company }}</td>
+      <td class="cost" style="max-width:34ch">{{ r.role }}</td>
+      <td class="n" style="text-align:right">{{ r.repost_count }}</td>
+      <td class="cost">{{ r.first_seen[:10] }} → {{ r.last_seen[:10] }}</td>
+      <td class="n" style="text-align:right">{{ r.days_span }}d</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
 
 <section class="run" style="margin-top:20px">
   <div class="run-head">

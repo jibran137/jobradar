@@ -12,6 +12,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import unicodedata
 from datetime import datetime, timezone
 from html import unescape
 from pathlib import Path
@@ -149,12 +150,32 @@ CREATE TABLE IF NOT EXISTS prep(
     answers_md TEXT,
     watch      TEXT,          -- the one thing that could sink this application
     checked_at TEXT,
+    -- A hiring manager or team member found for this application — always
+    -- hand-confirmed (a web search proposes a candidate, a person decides it's
+    -- the right one), never written by an automated sweep. See save_contact().
+    contact_name      TEXT,
+    contact_role      TEXT,
+    contact_linkedin  TEXT,
+    contact_note      TEXT,
+    contact_added_at  TEXT,
     PRIMARY KEY(company, job_id)
 );
 
 CREATE TABLE IF NOT EXISTS sweeps(
     started_at TEXT, finished_at TEXT,
     found INTEGER, new INTEGER, scored INTEGER, errors TEXT
+);
+
+-- One row per watched company, updated every sweep whether it succeeds or
+-- not. consecutive_errors resets to 0 on any successful fetch, so a board
+-- that recovers on its own quietly drops off the dead-board list instead of
+-- needing to be un-flagged by hand.
+CREATE TABLE IF NOT EXISTS board_health(
+    company            TEXT PRIMARY KEY,
+    consecutive_errors INTEGER NOT NULL DEFAULT 0,
+    last_error         TEXT,
+    last_ok_at         TEXT,
+    last_checked_at    TEXT
 );
 """
 
@@ -169,6 +190,12 @@ def db():
     if "posted_at" not in cols:
         con.execute("ALTER TABLE jobs ADD COLUMN posted_at TEXT")
         con.commit()
+    prep_cols = {r["name"] for r in con.execute("PRAGMA table_info(prep)")}
+    for col in ("contact_name", "contact_role", "contact_linkedin",
+                "contact_note", "contact_added_at"):
+        if col not in prep_cols:
+            con.execute(f"ALTER TABLE prep ADD COLUMN {col} TEXT")
+    con.commit()
     return con
 
 
@@ -287,7 +314,7 @@ CV_PYTHON = re.compile(
     r"machine learning|\bml\b|data pipeline|backend|etl|pytorch|scikit)\b", re.I)
 CV_STUDENT = re.compile(
     r"\b(werkstudent|working student|intern|internship|praktik\w*|thesis|"
-    r"abschlussarbeit|graduate|new grad|student)\b", re.I)
+    r"abschlussarbeit|student)\b", re.I)
 
 
 def cv_track(title, jd):
@@ -325,6 +352,33 @@ def letter_for(company):
         if key and (key in stem or stem.endswith(key)):
             return f.relative_to(CVWORK).as_posix()
     return None
+
+
+LINKEDIN_URL = re.compile(r"^https?://(www\.)?linkedin\.com/", re.I)
+
+
+def save_contact(company, job_id, name=None, role=None, linkedin=None, note=None):
+    """Save a hiring-manager/team contact found for one specific application.
+
+    Deliberately not automated at sweep time: nothing on a posting names who
+    to reach out to, so this is always the result of a targeted search a
+    person confirmed, not a bulk guess attached to a job by an algorithm.
+    Creates the prep row if reading the form hasn't touched this posting
+    yet — the two are filled independently of each other."""
+    if linkedin and not LINKEDIN_URL.match(linkedin.strip()):
+        raise ValueError(f"not a linkedin.com URL: {linkedin!r}")
+    con = db()
+    con.execute(
+        "INSERT INTO prep(company, job_id, contact_name, contact_role,"
+        " contact_linkedin, contact_note, contact_added_at) VALUES(?,?,?,?,?,?,?)"
+        " ON CONFLICT(company, job_id) DO UPDATE SET"
+        " contact_name=excluded.contact_name, contact_role=excluded.contact_role,"
+        " contact_linkedin=excluded.contact_linkedin, contact_note=excluded.contact_note,"
+        " contact_added_at=excluded.contact_added_at",
+        (company, job_id, name or None, role or None, linkedin or None,
+         note or None, now()))
+    con.commit()
+    con.close()
 
 
 # ------------------------------------------------------------- ATS keyword match
@@ -599,6 +653,139 @@ def _run_api(prompt, model):
         return None
 
 
+# ------------------------------------------------------------------ boards
+
+# Sweeps run on an irregular cadence and a single timeout or 500 is common —
+# flagging on the first miss would nag about noise, not dead boards. Three
+# misses in a row is a company that has been unreachable for the length of
+# several sweeps, which is what "dead" is meant to mean here.
+DEAD_BOARD_STREAK = 3
+
+
+def _record_board_health(con, company, checked_at, ok, error=None):
+    if ok:
+        con.execute(
+            "INSERT INTO board_health(company, consecutive_errors, last_error,"
+            " last_ok_at, last_checked_at) VALUES(?,0,NULL,?,?)"
+            " ON CONFLICT(company) DO UPDATE SET consecutive_errors=0,"
+            " last_error=NULL, last_ok_at=excluded.last_ok_at,"
+            " last_checked_at=excluded.last_checked_at",
+            (company, checked_at, checked_at))
+    else:
+        con.execute(
+            "INSERT INTO board_health(company, consecutive_errors, last_error,"
+            " last_checked_at) VALUES(?,1,?,?)"
+            " ON CONFLICT(company) DO UPDATE SET"
+            " consecutive_errors=consecutive_errors+1, last_error=excluded.last_error,"
+            " last_checked_at=excluded.last_checked_at",
+            (company, error, checked_at))
+
+
+def dead_boards():
+    """Companies whose board has failed DEAD_BOARD_STREAK+ sweeps in a row.
+    A prompt to go look, not a verdict — the board may just have changed its
+    URL or ATS. Recovers on its own (drops off this list) the moment a sweep
+    succeeds, since _record_board_health resets the streak to 0."""
+    con = db()
+    rows = con.execute(
+        "SELECT company, consecutive_errors, last_error, last_ok_at, last_checked_at"
+        " FROM board_health WHERE consecutive_errors >= ?"
+        " ORDER BY consecutive_errors DESC", (DEAD_BOARD_STREAK,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------- reposts
+
+REPOST_WINDOW_DAYS = 90
+# A cluster spanning 0 days is two job_ids first seen in the SAME sweep —
+# concurrent openings, the opposite of a repost. 1 day is the smallest span
+# that still means "seen again on a later sweep."
+REPOST_MIN_SPAN_DAYS = 1
+
+
+def title_identity_key(title):
+    """Canonical identity of a role title, for deciding whether two listings
+    are the same opening re-listed rather than two different ones. The key is
+    the title's set of words — accent-folded, lowercased, punctuation-stripped,
+    deduplicated and sorted — so word order and punctuation churn between two
+    listings of one role collapse to the same key, while a title differing by
+    a city, country or seniority word does not (those are sibling requisitions,
+    not reposts). No length/stopword filtering: that would erase exactly the
+    short words — "UK" vs "US" — that must stay distinct."""
+    raw = (title or "").strip()
+    folded = unicodedata.normalize("NFKD", raw)
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    words = sorted(set(re.findall(r"\w+", folded.lower(), re.UNICODE)))
+    return " ".join(words) if words else raw.lower()
+
+
+def _iso(ts):
+    return datetime.fromisoformat(ts)
+
+
+def detect_reposts(window_days=REPOST_WINDOW_DAYS, min_span_days=REPOST_MIN_SPAN_DAYS):
+    """Company + title-identity groups that look like the same opening
+    re-listed under a new job_id — not a sibling requisition (different
+    title) and not two roles opened in the same sweep (see REPOST_MIN_SPAN_DAYS).
+    Each row in `jobs` is already a distinct (company, job_id), so the
+    "different URL" check career-ops needs is automatic here.
+
+    Unlike career-ops (which only has scan-history sightings to go on),
+    `jobs` also tracks closed_at, and that turns out to matter: a company
+    running several concurrent open reqs under one identical title (seen on
+    real data — SumUp posts the same freelance-sales title once per
+    territory, dozens at a time, all open together) looks exactly like a
+    repost cluster by title+date alone. It isn't one — nothing closed and
+    reopened. So a listing only extends a chain when the previous listing in
+    it has actually closed by the time the next one first appears; several
+    listings open at once each start their own (too-short) chain instead of
+    merging into one, and get dropped by the length check below."""
+    con = db()
+    rows = con.execute("SELECT company, job_id, title, first_seen, closed_at"
+                        " FROM jobs ORDER BY company, first_seen").fetchall()
+    con.close()
+
+    by_key = {}
+    for r in rows:
+        key = (r["company"], title_identity_key(r["title"]))
+        by_key.setdefault(key, []).append(r)
+
+    clusters = []
+    for (company, _), group in by_key.items():
+        if len(group) < 2:
+            continue
+        group = sorted(group, key=lambda r: r["first_seen"])
+        chain = [group[0]]
+        for r in group[1:]:
+            prev = chain[-1]
+            if prev["closed_at"] and prev["closed_at"] <= r["first_seen"]:
+                chain.append(r)
+            else:
+                clusters += _seal_repost_cluster(company, chain, window_days, min_span_days)
+                chain = [r]
+        clusters += _seal_repost_cluster(company, chain, window_days, min_span_days)
+    clusters.sort(key=lambda c: c["last_seen"], reverse=True)
+    return clusters
+
+
+def _seal_repost_cluster(company, cluster, window_days, min_span_days):
+    if len(cluster) < 2:
+        return []
+    span = (_iso(cluster[-1]["first_seen"]) - _iso(cluster[0]["first_seen"])).days
+    if span > window_days or span < min_span_days:
+        return []
+    return [{
+        "company": company,
+        "role": cluster[-1]["title"],
+        "repost_count": len(cluster),
+        "first_seen": cluster[0]["first_seen"],
+        "last_seen": cluster[-1]["first_seen"],
+        "days_span": span,
+        "job_ids": [c["job_id"] for c in cluster],
+    }]
+
+
 # ------------------------------------------------------------------- sweep
 
 def sweep(fetch_descriptions=True, score=True, only=None, limit=60, log=print):
@@ -610,6 +797,7 @@ def sweep(fetch_descriptions=True, score=True, only=None, limit=60, log=print):
     """
     started, errors, seen_now, new_rows = now(), [], [], []
     fetched = set()          # companies whose board answered this run
+    con = db()
     for c in companies():
         if only and only.lower() not in c["company"].lower():
             continue
@@ -622,14 +810,16 @@ def sweep(fetch_descriptions=True, score=True, only=None, limit=60, log=print):
         except Exception as e:
             errors.append(f"{c['company']}: {e.__class__.__name__}: {e}")
             log(f"  ! {c['company']}: {e}")
+            _record_board_health(con, c["company"], started, ok=False,
+                                  error=f"{e.__class__.__name__}: {e}")
             continue
         fetched.add(c["company"])
+        _record_board_health(con, c["company"], started, ok=True)
         log(f"  {c['company']}: {len(jobs)} open")
         for j in jobs:
             j["company"] = c["company"]
         seen_now += jobs
-
-    con = db()
+    con.commit()
     known = {(r["company"], r["job_id"]) for r in con.execute(
         "SELECT company, job_id FROM jobs")}
     for j in seen_now:

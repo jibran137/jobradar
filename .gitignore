@@ -4,6 +4,7 @@ profile_local.py
 companies.json
 data/
 seen.sqlite3
+jobradar.sqlite3
 digests/
 HANDOFF.md
 *.bak
