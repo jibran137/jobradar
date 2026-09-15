@@ -71,3 +71,15 @@ CV_TRACKS = {
                 "The one-page resume, for postings that name no particular stack."),
 }
 DEFAULT_CV = ("General", "cv/out/Resume.pdf", "")
+
+# Letterhead for generated cover letters — the block that goes at the top of
+# every one, and the return address for the "City, Date" line.
+SENDER = {
+    "name": "Alex Doe",
+    "city": "Springfield",
+    "phone": "+1 555 0100",
+    "email": "alex.doe@example.com",
+    "linkedin": "linkedin.com/in/alexdoe",
+    "github": "github.com/alexdoe",
+    "website": "",
+}

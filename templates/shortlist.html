@@ -14,8 +14,10 @@
   split when the title says so, and <b>General</b> means the posting names no
   particular stack rather than that nothing was found. <b>Whether the form wants a
   cover letter is a different question</b>, and one the posting can't answer: it
-  needs the form opened. Until then a row says <i>Form not opened</i>, and the
-  letter chip reports only what already exists in <span class="num">cvwork/cover_letters/</span>.</p>
+  needs the form opened. Until then a row says <i>Form not opened</i>. The letter
+  chip reports what already exists in <span class="num">cvwork/cover_letters/</span> —
+  or draft one on the spot with <b>Draft cover letter</b>, which writes the body
+  with the same model that scores postings and saves it as a PDF there.</p>
 
 <p class="note-p"><b>ATS %</b> is a different question from the verdict — the verdict reads the
   posting for fit, this reads it the dumb way a keyword-scoring ATS does: which
@@ -45,12 +47,37 @@
     {% endif %}
     <form method="get" action="/shortlist" style="display:flex;gap:6px;align-items:center;margin-left:8px">
       <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="min_ats" value="{{ min_ats }}">
+      <input type="hidden" name="posted" value="{{ posted }}">
       <span class="label" style="font-size:10px;color:var(--muted)">Aim for</span>
       <input type="number" name="target" min="1" max="200" value="{{ target }}"
              style="width:72px" aria-label="How many companies to list">
       <button>Set</button>
     </form>
   </div>
+  <div class="run-head" style="margin-top:8px">
+    <form method="get" action="/shortlist" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="target" value="{{ target }}">
+      <span class="label" style="font-size:10px;color:var(--muted)">Min ATS %</span>
+      <input type="number" name="min_ats" min="0" max="100" step="10" value="{{ min_ats }}"
+             style="width:64px" aria-label="Minimum ATS keyword-match percent">
+      <span class="label" style="font-size:10px;color:var(--muted);margin-left:6px">Found within, days</span>
+      <input type="number" name="posted" min="1" max="365" value="{{ posted }}"
+             style="width:64px" aria-label="Only postings found within this many days">
+      <button>Apply filter</button>
+      {% if min_ats or posted %}
+        <a class="chip" href="/shortlist?target={{ target }}&sort={{ sort }}">Clear</a>
+      {% endif %}
+    </form>
+    <span style="flex:1"></span>
+    <a class="btn" href="/shortlist?target={{ target }}&min_ats=80&posted=7"
+       title="Same-day send batch: ATS-match 80%+ and found in the last 7 days">Tomorrow's list</a>
+  </div>
+  {% if n_filtered_out %}
+    <p class="cost" style="margin:9px 0 0">{{ n_filtered_out }} companies that would
+      otherwise be sendable are hidden by the ATS/recency filter above.</p>
+  {% endif %}
   {% if funnel.unread %}
     <p class="cost" style="margin:9px 0 0">{{ funnel.unread }} postings are still
       unread — this list can only rank what has been judged. Read more and it grows.</p>
@@ -103,6 +130,12 @@
           <span class="doc on" title="{{ r.letter_pdf }}">✓ Letter written</span>
         {% else %}
           <span class="doc off">○ No letter written yet</span>
+          <form method="post" action="/letter" style="display:inline">
+            <input type="hidden" name="company" value="{{ r.company }}">
+            <input type="hidden" name="job_id" value="{{ r.job_id }}">
+            <input type="hidden" name="back" value="/shortlist?target={{ target }}&sort={{ sort }}&min_ats={{ min_ats }}&posted={{ posted }}">
+            <button class="chip" title="Draft a tailored cover letter with the model and render it to PDF — takes ~5-20s">✎ Draft cover letter</button>
+          </form>
         {% endif %}
         {% if r.checked %}
           <a class="doc on" href="/apply" style="text-decoration:none">✓ Form read — see Ready to send</a>
@@ -125,7 +158,7 @@
         <form method="post" action="/contact" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
           <input type="hidden" name="company" value="{{ r.company }}">
           <input type="hidden" name="job_id" value="{{ r.job_id }}">
-          <input type="hidden" name="back" value="/shortlist?target={{ target }}">
+          <input type="hidden" name="back" value="/shortlist?target={{ target }}&sort={{ sort }}&min_ats={{ min_ats }}&posted={{ posted }}">
           <input type="text" name="contact_name" placeholder="Name" style="width:150px"
                  value="{{ contact.contact_name or '' }}">
           <input type="text" name="contact_role" placeholder="Role, e.g. Engineering Manager" style="width:200px"
@@ -141,14 +174,14 @@
         <form method="post" action="/status">
           <input type="hidden" name="company" value="{{ r.company }}">
           <input type="hidden" name="job_id" value="{{ r.job_id }}">
-          <input type="hidden" name="back" value="/shortlist?target={{ target }}">
+          <input type="hidden" name="back" value="/shortlist?target={{ target }}&sort={{ sort }}&min_ats={{ min_ats }}&posted={{ posted }}">
           <input type="hidden" name="status" value="applied">
           <button class="go">Sent</button>
         </form>
         <form method="post" action="/status">
           <input type="hidden" name="company" value="{{ r.company }}">
           <input type="hidden" name="job_id" value="{{ r.job_id }}">
-          <input type="hidden" name="back" value="/shortlist?target={{ target }}">
+          <input type="hidden" name="back" value="/shortlist?target={{ target }}&sort={{ sort }}&min_ats={{ min_ats }}&posted={{ posted }}">
           <input type="hidden" name="status" value="dismissed">
           <button>Not for me</button>
         </form>

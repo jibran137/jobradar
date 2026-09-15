@@ -12,6 +12,7 @@ import asyncio
 import json
 import os
 import re
+import sys
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Form, Request
@@ -283,7 +284,8 @@ SHORTLIST_TARGET = 40
 
 
 @app.get("/shortlist", response_class=HTMLResponse)
-def shortlist(request: Request, target: int = SHORTLIST_TARGET, sort: str = "default"):
+def shortlist(request: Request, target: int = SHORTLIST_TARGET, sort: str = "default",
+              min_ats: int = 0, posted: str = ""):
     """A day's sending list: one role per company, best fit first.
 
     The queue is posting-shaped, but the unit of work is the application — and
@@ -292,8 +294,15 @@ def shortlist(request: Request, target: int = SHORTLIST_TARGET, sort: str = "def
     open role at each company, then sets aside the ones that cannot be sent
     whatever the fit. Nothing is hidden: the set-aside rows are listed below the
     list with the phrase from the posting that put them there.
+
+    ``min_ats`` and ``posted`` narrow this down to a same-day send batch: only
+    postings whose literal-keyword match against the CV clears a bar, and that
+    surfaced recently rather than sitting in the backlog for weeks. Both are
+    applied after the fit filters above, never in place of them — a row still
+    has to be reachable and open to appear at all.
     """
     target = max(1, min(int(target), 200))
+    min_ats = max(0, min(int(min_ats), 100))
     con = core.db()
     rows = [dict(r) for r in con.execute(
         "SELECT * FROM jobs WHERE closed_at IS NULL AND status='new'"
@@ -335,7 +344,9 @@ def shortlist(request: Request, target: int = SHORTLIST_TARGET, sort: str = "def
     # Which CV to send is decidable from the posting; whether the form wants a
     # cover letter is not, so that stays blank until the form is opened. The
     # letter column reports only what already exists on disk in cvwork/.
-    for r in reachable[:target]:
+    # Computed for every reachable row, not just the display slice, because
+    # min_ats/posted below have to filter before the list is cut to target.
+    for r in reachable:
         track, why = core.cv_track(r["title"], r["jd_text"])
         name, path, hint = CV_TRACKS.get(track, CV_TRACKS["general"])
         r["cv_track"], r["cv_why"], r["cv_name"], r["cv_hint"] = track, why, name, hint
@@ -345,13 +356,22 @@ def shortlist(request: Request, target: int = SHORTLIST_TARGET, sort: str = "def
         r["letter_pdf"] = core.letter_for(r["company"])
         r["checked"] = prepped.get((r["company"], r["job_id"]))
 
+    filtered = reachable
+    if min_ats:
+        filtered = [r for r in filtered
+                    if r["ats_score"] is not None and r["ats_score"] >= min_ats]
+    if posted and posted.isdigit():
+        cutoff = datetime.now(timezone.utc).timestamp() - int(posted) * 86400
+        filtered = [r for r in filtered
+                    if datetime.fromisoformat(r["first_seen"]).timestamp() >= cutoff]
+
     return templates.TemplateResponse(request, "shortlist.html", {
-        "list": reachable[:target], "bench": reachable[target:], "cut": cut,
+        "list": filtered[:target], "bench": filtered[target:], "cut": cut,
         "sent": sent, "target": target, "state": state, "funnel": funnel(),
         "counts": counts(), "loc_label": core.LOCATION_LABEL,
-        "scorer": core.scorer(), "sort": sort,
-        "n_apply": sum(1 for r in reachable[:target] if r["verdict"] == "APPLY"),
-        "n_companies": len(seen),
+        "scorer": core.scorer(), "sort": sort, "min_ats": min_ats, "posted": posted,
+        "n_apply": sum(1 for r in filtered[:target] if r["verdict"] == "APPLY"),
+        "n_companies": len(seen), "n_filtered_out": len(reachable) - len(filtered),
     })
 
 
@@ -409,6 +429,18 @@ async def save_contact(company: str = Form(...), job_id: str = Form(...),
                        back: str = Form("/")):
     core.save_contact(company, job_id, contact_name.strip(), contact_role.strip(),
                       contact_linkedin.strip(), contact_note.strip())
+    return RedirectResponse(back or "/", status_code=303)
+
+
+@app.post("/letter")
+async def draft_letter(company: str = Form(...), job_id: str = Form(...),
+                        back: str = Form("/")):
+    # One model call plus a Chrome render, ~5-20s — worth the wait on a single
+    # button press, but off the event loop so it doesn't stall other requests.
+    try:
+        await asyncio.to_thread(core.generate_cover_letter, company, job_id)
+    except Exception as e:
+        print(f"  ! cover letter for {company}/{job_id}: {e}", file=sys.stderr)
     return RedirectResponse(back or "/", status_code=303)
 
 

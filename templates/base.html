@@ -4,78 +4,114 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}jobradar{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 /* ─────────────────────────────────────────────────────────────────────────
    jobradar — a filter with a noise floor.
-   Palette: cool slate ground, teal for signal, amber for caution. The type
-   pairs Futura (labels, wordmark) with Avenir Next (prose) and SF Mono (counts).
+   Palette: warm paper ground, teal for signal, amber for caution — see
+   DESIGN_THEME.md. Type is SF Pro (labels, wordmark, prose) with
+   IBM Plex Mono for counts.
    ───────────────────────────────────────────────────────────────────────── */
 :root {
-  --ground:  #E9EDEF;  --panel:   #FFFFFF;  --sunk:    #DFE5E8;
-  --ink:     #10171D;  --muted:   #5C6A75;  --faint:   #8B98A3;
-  --rule:    #CBD5DB;  --rule-2:  #E2E8EB;
-  --signal:  #0E7C6B;  --signal-bg: #DDF0EC;
+  /* warm paper / teal — see DESIGN_THEME.md */
+  --ground:  #F1ECE2;  --panel:   #F8F5EF;  --sunk:    #ECE4D4;
+  --ink:     #241F17;  --muted:   #6E6459;  --faint:   #8B8173;
+  --rule:    rgba(55,42,24,0.18);  --rule-2:  rgba(55,42,24,0.10);
+  --signal:  #0E8C7B;  --signal-hover: #0B7568;  --signal-on: #FFFFFF;
+  --signal-bg: rgba(14,140,123,0.10);
   --caution: #9A6512;  --caution-bg: #F7EBD6;
-  --floor:   #7C8A95;
-  --focus:   #0E7C6B;
-  --shadow:  0 1px 2px rgba(16,23,29,.05), 0 6px 18px -10px rgba(16,23,29,.18);
+  --live:    #2FAE60;
+  --glass-bg: rgba(241,236,226,0.72);  --glass-line: rgba(55,42,24,0.08);
+  --floor:   #9C9284;
+  --focus:   #0E8C7B;
+  --shadow:  0 1px 2px rgba(40,30,10,.05), 0 16px 32px -18px rgba(40,30,10,.18);
+  --shadow-hover: 0 2px 4px rgba(40,30,10,.06), 0 24px 48px -18px rgba(40,30,10,.24);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+          "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 :root:not([data-theme="light"]) { }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --ground:  #0D1216;  --panel:   #151C22;  --sunk:    #101821;
-    --ink:     #E4EBF0;  --muted:   #94A3AF;  --faint:   #6B7A86;
-    --rule:    #26313A;  --rule-2:  #1D262E;
-    --signal:  #45C6AE;  --signal-bg: #10312D;
+    --ground:  #17140F;  --panel:   #201B14;  --sunk:    #14110C;
+    --ink:     #F1ECE2;  --muted:   #B8AC98;  --faint:   #8B8173;
+    --rule:    rgba(241,236,226,0.16);  --rule-2:  rgba(241,236,226,0.08);
+    --signal:  #35CDB3;  --signal-hover: #4FDDC5;  --signal-on: #0D1512;
+    --signal-bg: rgba(53,205,179,0.14);
     --caution: #D9A14A;  --caution-bg: #2E2415;
-    --floor:   #6B7A86;
-    --focus:   #45C6AE;
+    --live:    #3FC471;
+    --glass-bg: rgba(23,20,15,0.72);  --glass-line: rgba(241,236,226,0.08);
+    --floor:   #8B8173;
+    --focus:   #35CDB3;
     --shadow:  0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+    --shadow-hover: 0 2px 4px rgba(0,0,0,.5), 0 12px 32px -12px rgba(0,0,0,.8);
   }
 }
 :root[data-theme="dark"] {
-  --ground:  #0D1216;  --panel:   #151C22;  --sunk:    #101821;
-  --ink:     #E4EBF0;  --muted:   #94A3AF;  --faint:   #6B7A86;
-  --rule:    #26313A;  --rule-2:  #1D262E;
-  --signal:  #45C6AE;  --signal-bg: #10312D;
+  --ground:  #17140F;  --panel:   #201B14;  --sunk:    #14110C;
+  --ink:     #F1ECE2;  --muted:   #B8AC98;  --faint:   #8B8173;
+  --rule:    rgba(241,236,226,0.16);  --rule-2:  rgba(241,236,226,0.08);
+  --signal:  #35CDB3;  --signal-hover: #4FDDC5;  --signal-on: #0D1512;
+  --signal-bg: rgba(53,205,179,0.14);
   --caution: #D9A14A;  --caution-bg: #2E2415;
-  --floor:   #6B7A86;
-  --focus:   #45C6AE;
+  --live:    #3FC471;
+  --glass-bg: rgba(23,20,15,0.72);  --glass-line: rgba(241,236,226,0.08);
+  --floor:   #8B8173;
+  --focus:   #35CDB3;
   --shadow:  0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+  --shadow-hover: 0 2px 4px rgba(0,0,0,.5), 0 12px 32px -12px rgba(0,0,0,.8);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--ground); color: var(--ink);
-  font: 15px/1.55 "Avenir Next", "Segoe UI Variable Text", "Nimbus Sans",
-        ui-sans-serif, system-ui, sans-serif;
+  font: 15px/1.55 var(--font);
   -webkit-font-smoothing: antialiased;
 }
 a { color: inherit; }
 .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
 
-/* Futura for anything that labels rather than reads. */
-.label, .brand, .tab, .eyebrow, th {
-  font-family: Futura, "Avenir Next Condensed", "Twentieth Century",
-               "Segoe UI Variable Display", ui-sans-serif, sans-serif;
-  letter-spacing: .09em; text-transform: uppercase;
+/* Eyebrows/labels: mono webfont as a deliberate accent, small caps-like. */
+.label, .tab, .eyebrow, th {
+  font-family: var(--mono);
+  letter-spacing: .1em; text-transform: uppercase;
 }
-.num { font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+.brand { font-family: var(--font); letter-spacing: .16em; text-transform: uppercase; }
+.num { font-family: var(--mono);
        font-variant-numeric: tabular-nums; }
 
-/* ── header ────────────────────────────────────────────────────────────── */
-header { background: var(--panel); border-bottom: 1px solid var(--rule);
+/* ── header: liquid glass — sticky, frosted, hairline border ─────────────── */
+header { background: var(--glass-bg); border-bottom: 1px solid var(--glass-line);
+  backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6);
   position: sticky; top: 0; z-index: 20; }
-.top { display: flex; align-items: center; gap: 18px; padding: 13px 0 12px; }
+.top { display: flex; align-items: center; gap: 18px; padding: 15px 0 14px; }
 .brand { font-size: 15px; font-weight: 600; letter-spacing: .16em; }
 .brand span { color: var(--signal); }
 .top-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
+/* "live"/active status — reserved exclusively for running-state indicators */
+.live { display: inline-flex; align-items: center; gap: 7px; font-size: 11px;
+  color: var(--live); }
+.live-dot { position: relative; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--live); flex: none; }
+.live-dot::after { content: ""; position: absolute; inset: -5px; border-radius: 50%;
+  border: 1px solid var(--live); opacity: .6; animation: pulse 1.6s var(--ease) infinite; }
+@keyframes pulse {
+  0%   { transform: scale(.5); opacity: .7; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+/* ── subhead: funnel/subtabs/filters — scrolls away, not pinned ──────────── */
+.subhead { border-bottom: 1px solid var(--rule-2); }
+
 /* ── the funnel: this tool's whole job, as live counts ─────────────────── */
-.funnel { display: flex; align-items: stretch; gap: 2px; padding: 0 0 13px; }
+.funnel { display: flex; align-items: stretch; gap: 2px; padding: 13px 0; }
 .stage { flex: 1; min-width: 0; background: var(--sunk); border: 0;
-  border-radius: 3px; padding: 9px 11px 10px; text-align: left; cursor: pointer;
+  border-radius: 10px; padding: 9px 11px 10px; text-align: left; cursor: pointer;
   color: inherit; font: inherit; position: relative; overflow: hidden;
   text-decoration: none; transition: background .14s ease; }
 .stage .k, .stage .v { text-decoration: none; }
@@ -96,21 +132,24 @@ header { background: var(--panel); border-bottom: 1px solid var(--rule);
 .stage.s-keep .v { color: var(--caution); }
 .stage.s-unread .v { color: var(--muted); }
 
-/* ── controls ──────────────────────────────────────────────────────────── */
+/* ── controls: capsule buttons, scale (not move) on hover ────────────────── */
 button, .btn { font: inherit; font-size: 13px; cursor: pointer;
   border: 1px solid var(--rule); background: var(--panel); color: var(--ink);
-  border-radius: 6px; padding: 6px 11px; text-decoration: none;
+  border-radius: 980px; padding: 6px 13px; text-decoration: none;
   display: inline-flex; align-items: center; gap: 6px; line-height: 1.2;
-  transition: border-color .13s ease, background .13s ease; }
-button:hover, .btn:hover { border-color: var(--muted); }
-button.go { background: var(--ink); color: var(--ground); border-color: var(--ink); }
-button.go:hover { opacity: .87; }
+  transition: border-color .2s ease, background .2s ease, color .2s ease,
+              transform .3s var(--ease); }
+button:hover, .btn:hover { border-color: var(--muted); transform: scale(1.035); }
+button:active, .btn:active { transform: scale(.98); }
+button.go { background: var(--signal); color: var(--signal-on); border-color: var(--signal); }
+button.go:hover { background: var(--signal-hover); border-color: var(--signal-hover); }
 button.warn { border-color: var(--caution); color: var(--caution); }
 button:disabled { opacity: .45; cursor: not-allowed; }
+button:disabled:hover { transform: none; }
 :where(a, button, input, select, textarea, summary):focus-visible {
   outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 5px; }
 input, select, textarea { font: inherit; font-size: 13.5px; color: var(--ink);
-  background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 10px;
   padding: 6px 9px; }
 input::placeholder { color: var(--faint); }
 
@@ -120,14 +159,14 @@ input::placeholder { color: var(--faint); }
 .nav::-webkit-scrollbar { display: none; }
 .nav-item { display: inline-flex; align-items: center; gap: 7px;
   text-decoration: none; font-size: 12.5px; font-weight: 500; color: var(--muted);
-  white-space: nowrap; padding: 7px 12px; border-radius: 7px;
+  white-space: nowrap; padding: 7px 14px; border-radius: 980px;
   transition: background .13s ease, color .13s ease; }
 .nav-item:hover { color: var(--ink); background: var(--sunk); }
 .nav-item .ic { font-size: 12px; opacity: .7; line-height: 1; }
 .nav-item[aria-current="page"] { color: var(--ink); background: var(--panel);
   box-shadow: inset 0 0 0 1px var(--rule), var(--shadow); }
 .nav-item[aria-current="page"] .ic { opacity: 1; color: var(--signal); }
-.nav-item .n { font-family: "SF Mono", ui-monospace, Menlo, monospace;
+.nav-item .n { font-family: var(--mono);
   font-size: 10.5px; letter-spacing: 0; color: var(--faint);
   background: var(--sunk); border-radius: 999px; padding: 1px 6px; }
 .nav-item[aria-current="page"] .n { color: var(--signal); background: var(--signal-bg); }
@@ -140,23 +179,36 @@ input::placeholder { color: var(--faint); }
   color: var(--muted); white-space: nowrap; border-bottom: 2px solid transparent; }
 .subtab:hover { color: var(--ink); }
 .subtab[aria-current="page"] { color: var(--ink); border-bottom-color: var(--signal); }
-.subtab .n { font-family: "SF Mono", ui-monospace, Menlo, monospace;
+.subtab .n { font-family: var(--mono);
   font-size: 10.5px; letter-spacing: 0; margin-left: 5px; color: var(--faint); }
 .subtab[aria-current="page"] .n { color: var(--signal); }
 
 /* ── filters (queue page) ─────────────────────────────────────────────── */
 
+/* Filters live behind a toggle on mobile; always open on wider screens. */
+.filters-toggle { border-bottom: 1px solid var(--rule-2); }
+.filters-toggle > summary { cursor: pointer; font-size: 12px; color: var(--muted);
+  list-style: none; display: none; align-items: center; gap: 6px; padding: 10px 0; }
+.filters-toggle > summary::-webkit-details-marker { display: none; }
+.filters-toggle > summary::before { content: "▸"; font-size: 9px; }
+.filters-toggle[open] > summary::before { content: "▾"; }
+.filters-toggle > summary:hover { color: var(--ink); }
+.filters-toggle > summary .n { font-family: var(--mono); font-size: 10px;
+  color: var(--signal); background: var(--signal-bg); border-radius: 999px;
+  padding: 1px 7px; }
 .filters { display: flex; gap: 7px; flex-wrap: wrap; align-items: center;
-  padding: 12px 0; border-bottom: 1px solid var(--rule-2); }
+  padding: 12px 0; }
 .filters .grow { flex: 1; min-width: 150px; }
 .chip { font-size: 12px; color: var(--muted); text-decoration: none;
-  border: 1px solid var(--rule); border-radius: 999px; padding: 3px 10px; }
+  border: 1px solid var(--rule); border-radius: 999px; padding: 3px 10px;
+  display: inline-block; transition: transform .3s var(--ease), border-color .2s ease; }
+.chip:hover { border-color: var(--muted); transform: scale(1.04); }
 
 main { padding: 18px 0 80px; }
 
 /* ── run panel ─────────────────────────────────────────────────────────── */
 .run { background: var(--panel); border: 1px solid var(--rule);
-  border-radius: 8px; padding: 13px 15px; margin-bottom: 16px;
+  border-radius: 14px; padding: 14px 16px; margin-bottom: 16px;
   box-shadow: var(--shadow); }
 .run-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .run-head .label { font-size: 10.5px; color: var(--muted); }
@@ -164,18 +216,18 @@ main { padding: 18px 0 80px; }
   margin: 11px 0 0; overflow: hidden; }
 .meter i { display: block; height: 100%; background: var(--signal);
   width: var(--p, 0%); transition: width .4s ease; }
-.stream { font-family: "SF Mono", ui-monospace, Menlo, monospace;
+.stream { font-family: var(--mono);
   font-size: 11.5px; line-height: 1.65; color: var(--muted); margin: 11px 0 0;
   max-height: 190px; overflow: auto; white-space: pre-wrap; }
 .cost { font-size: 12px; color: var(--faint); }
 
 /* ── job cards ─────────────────────────────────────────────────────────── */
 .job { background: var(--panel); border: 1px solid var(--rule-2);
-  border-radius: 8px; margin-bottom: 8px; position: relative;
-  transition: border-color .13s ease; }
-.job:hover { border-color: var(--rule); }
-.job.is-focus { border-color: var(--focus); box-shadow: var(--shadow); }
-.job > .pad { padding: 13px 16px 14px 18px; }
+  border-radius: 16px; margin-bottom: 8px; position: relative;
+  transition: border-color .2s ease, box-shadow .2s ease; }
+.job:hover { border-color: var(--rule); box-shadow: var(--shadow); }
+.job.is-focus { border-color: var(--focus); box-shadow: var(--shadow-hover); }
+.job > .pad { padding: 14px 18px 15px 20px; }
 .job::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px;
   width: 3px; border-radius: 0 3px 3px 0; background: transparent; }
 .job.v-APPLY::before { background: var(--signal); }
@@ -190,9 +242,9 @@ main { padding: 18px 0 80px; }
 .job h2 a:hover { text-decoration: underline; text-underline-offset: 2px; }
 .meta { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); }
 .meta b { font-weight: 600; color: var(--ink); }
-.verdict { font-family: Futura, "Avenir Next Condensed", ui-sans-serif, sans-serif;
+.verdict { font-family: var(--mono);
   font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
-  padding: 3px 8px; border-radius: 3px; white-space: nowrap; flex: none;
+  padding: 3px 9px; border-radius: 999px; white-space: nowrap; flex: none;
   margin-top: 2px; }
 .v-APPLY .verdict { background: var(--signal-bg); color: var(--signal); }
 .v-MAYBE .verdict { background: var(--caution-bg); color: var(--caution); }
@@ -215,14 +267,14 @@ main { padding: 18px 0 80px; }
 .logi { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); max-width: 74ch; }
 .logi .label { font-size: 9.5px; margin-right: 6px; color: var(--faint); }
 /* Document slots: a channel is either carrying something or it isn't. */
-.doc { font-size: 12px; padding: 4px 10px; border-radius: 5px;
+.doc { font-size: 12px; padding: 4px 11px; border-radius: 999px;
   background: var(--sunk); color: var(--muted); white-space: nowrap; }
 .doc.on { background: var(--signal-bg); color: var(--signal); font-weight: 600; }
 .doc.off { opacity: .6; }
 .doc.warn { background: var(--caution-bg); color: var(--caution); font-weight: 600; }
 .blockers .label { font-size: 9.5px; margin-right: 6px; }
-.note-shown { margin: 8px 0 0; font-size: 13px; padding: 7px 11px;
-  background: var(--sunk); border-radius: 5px; color: var(--ink); }
+.note-shown { margin: 8px 0 0; font-size: 13px; padding: 7px 12px;
+  background: var(--sunk); border-radius: 10px; color: var(--ink); }
 
 .acts { display: flex; gap: 5px; margin-top: 12px; flex-wrap: wrap;
   align-items: center; }
@@ -236,8 +288,8 @@ details.jd > summary::-webkit-details-marker { display: none; }
 details.jd > summary::before { content: "▸"; font-size: 9px; }
 details.jd[open] > summary::before { content: "▾"; }
 details.jd > summary:hover { color: var(--ink); }
-.jd-body { margin-top: 9px; padding: 12px 14px; background: var(--sunk);
-  border-radius: 6px; font-size: 13px; line-height: 1.6; color: var(--muted);
+.jd-body { margin-top: 9px; padding: 13px 15px; background: var(--sunk);
+  border-radius: 12px; font-size: 13px; line-height: 1.6; color: var(--muted);
   max-height: 380px; overflow: auto; white-space: pre-wrap; }
 .more { margin-top: 10px; border-top: 1px solid var(--rule-2); padding-top: 9px; }
 .more > summary { cursor: pointer; font-size: 12px; color: var(--faint);
@@ -260,23 +312,32 @@ details.jd > summary:hover { color: var(--ink); }
 table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 th, td { text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--rule-2); }
 th { font-size: 9.5px; color: var(--faint); font-weight: 500; }
-td.n { font-family: "SF Mono", ui-monospace, Menlo, monospace; }
+td.n { font-family: var(--mono); }
 tr:hover td { background: var(--sunk); }
 .panel { background: var(--panel); border: 1px solid var(--rule);
-  border-radius: 8px; padding: 4px 6px; box-shadow: var(--shadow); }
+  border-radius: 14px; padding: 4px 6px; box-shadow: var(--shadow); }
 .empty { text-align: center; padding: 64px 20px; color: var(--muted); }
 .empty .big { font-size: 17px; color: var(--ink); margin-bottom: 7px; }
 .note-p { font-size: 13px; color: var(--muted); margin: 0 0 16px; max-width: 78ch; }
 .pager { display: flex; gap: 8px; justify-content: center; margin-top: 22px; }
-kbd { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11px;
+kbd { font-family: var(--mono); font-size: 11px;
   border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px;
   padding: 1px 5px; color: var(--muted); }
 
 @media (max-width: 720px) {
-  .funnel { flex-wrap: wrap; }
-  .stage { flex: 1 1 30%; }
+  .top { padding: 11px 0 10px; gap: 12px; }
+  .nav { padding: 6px 0; }
+  .funnel { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    padding: 10px 0; }
+  .funnel::-webkit-scrollbar { display: none; }
+  .stage { flex: 0 0 30%; min-width: 96px; }
   .stage .v { font-size: 17px; }
   .job-top { flex-wrap: wrap; }
+  .filters-toggle > summary { display: inline-flex; }
+  .filters-toggle:not([open]) .filters { display: none; }
+}
+@media (min-width: 721px) {
+  .filters-toggle:not([open]) .filters { display: flex; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
@@ -291,7 +352,7 @@ kbd { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11px;
       <span class="brand">job<span>radar</span></span>
       <div class="top-right">
         {% if state.running %}
-          <span class="label" style="font-size:10px;color:var(--muted)">{{ state.task }}…</span>
+          <span class="live"><span class="live-dot"></span>{{ state.task }}…</span>
           <form method="post" action="/stop"><button class="warn">Stop</button></form>
         {% else %}
           <form method="post" action="/sweep">
@@ -312,35 +373,6 @@ kbd { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11px;
       </div>
     </div>
 
-    {% if request.url.path == '/' %}
-    <div class="funnel">
-      {% set f = funnel %}
-      <a class="stage" href="/?show=all" style="--w:100%"
-         title="Every posting currently open across the watched boards">
-        <span class="k">Tracked</span><span class="v num">{{ f.total }}</span></a>
-      <a class="stage" href="/?show=skip&amp;verdict=SKIP"
-         style="--w:{{ (100 * f.titled / (f.total or 1)) | round }}%"
-         title="Dropped on the title alone — no model call, no cost">
-        <span class="k">Title-filtered</span><span class="v num">{{ f.titled }}</span></a>
-      <a class="stage s-unread" href="/?show=all&amp;verdict=unread"
-         style="--w:{{ (100 * f.unread / (f.total or 1)) | round }}%"
-         title="Fetched but not yet read in full">
-        <span class="k">Unread</span><span class="v num">{{ f.unread }}</span></a>
-      <a class="stage" href="/?show=all"
-         style="--w:{{ (100 * f.read / (f.total or 1)) | round }}%"
-         title="Read in full and judged against your profile">
-        <span class="k">Read</span><span class="v num">{{ f.read }}</span></a>
-      <a class="stage s-keep" href="/?show=queue"
-         style="--w:{{ (100 * f.keep / (f.total or 1)) | round }}%"
-         title="Worth your attention">
-        <span class="k">Worth a look</span><span class="v num">{{ f.keep }}</span></a>
-      <a class="stage s-apply" href="/?show=all&amp;verdict=APPLY"
-         style="--w:{{ (100 * f.apply / (f.total or 1)) | round }}%"
-         title="Strong fit — apply">
-        <span class="k">Apply</span><span class="v num">{{ f.apply }}</span></a>
-    </div>
-    {% endif %}
-
     <nav class="nav" aria-label="Sections">
       <a class="nav-item" href="/" {{ 'aria-current="page"' | safe if request.url.path == '/' }}>
         <span class="ic">◧</span>To decide<span class="n">{{ counts.queue }}</span></a>
@@ -351,18 +383,49 @@ kbd { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11px;
       <a class="nav-item" href="/companies" {{ 'aria-current="page"' | safe if request.url.path == '/companies' }}>
         <span class="ic">▦</span>Companies</a>
     </nav>
-
-    {% block tabs %}{% endblock %}
   </div>
 </header>
+
+<div class="subhead"><div class="wrap">
+  {% if request.url.path == '/' %}
+  <div class="funnel">
+    {% set f = funnel %}
+    <a class="stage" href="/?show=all" style="--w:100%"
+       title="Every posting currently open across the watched boards">
+      <span class="k">Tracked</span><span class="v num">{{ f.total }}</span></a>
+    <a class="stage" href="/?show=skip&amp;verdict=SKIP"
+       style="--w:{{ (100 * f.titled / (f.total or 1)) | round }}%"
+       title="Dropped on the title alone — no model call, no cost">
+      <span class="k">Title-filtered</span><span class="v num">{{ f.titled }}</span></a>
+    <a class="stage s-unread" href="/?show=all&amp;verdict=unread"
+       style="--w:{{ (100 * f.unread / (f.total or 1)) | round }}%"
+       title="Fetched but not yet read in full">
+      <span class="k">Unread</span><span class="v num">{{ f.unread }}</span></a>
+    <a class="stage" href="/?show=all"
+       style="--w:{{ (100 * f.read / (f.total or 1)) | round }}%"
+       title="Read in full and judged against your profile">
+      <span class="k">Read</span><span class="v num">{{ f.read }}</span></a>
+    <a class="stage s-keep" href="/?show=queue"
+       style="--w:{{ (100 * f.keep / (f.total or 1)) | round }}%"
+       title="Worth your attention">
+      <span class="k">Worth a look</span><span class="v num">{{ f.keep }}</span></a>
+    <a class="stage s-apply" href="/?show=all&amp;verdict=APPLY"
+       style="--w:{{ (100 * f.apply / (f.total or 1)) | round }}%"
+       title="Strong fit — apply">
+      <span class="k">Apply</span><span class="v num">{{ f.apply }}</span></a>
+  </div>
+  {% endif %}
+
+  {% block tabs %}{% endblock %}
+</div></div>
 
 <main><div class="wrap">{% block body %}{% endblock %}</div></main>
 
 <script>
-// Theme: remember the choice, otherwise follow the system.
+// Theme: remember the choice, otherwise default to light.
 (function () {
   var root = document.documentElement, saved = localStorage.getItem("jr-theme");
-  if (saved) root.setAttribute("data-theme", saved);
+  root.setAttribute("data-theme", saved || "light");
   document.getElementById("theme").addEventListener("click", function () {
     var dark = matchMedia("(prefers-color-scheme: dark)").matches;
     var now = root.getAttribute("data-theme") || (dark ? "dark" : "light");

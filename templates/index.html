@@ -13,41 +13,45 @@
   {% endfor %}
 </div>
 
-<form class="filters" method="get" action="/">
-  <input type="hidden" name="show" value="{{ show }}">
-  <input class="grow" type="search" name="q" value="{{ q }}"
-         placeholder="Search titles, companies, reasons" aria-label="Search postings">
-  <select name="verdict" aria-label="Filter by verdict">
-    <option value="">Any verdict</option>
-    {% for v in ['APPLY','MAYBE','SKIP'] %}
-      <option value="{{ v }}" {{ 'selected' if verdict == v }}>{{ v|title }}</option>
-    {% endfor %}
-    <option value="unread" {{ 'selected' if verdict == 'unread' }}>Not read yet</option>
-  </select>
-  <select name="loc" aria-label="Filter by location">
-    <option value="">Anywhere</option>
-    {% for t in loc_order %}
-      <option value="{{ t }}" {{ 'selected' if loc == t }}>{{ loc_label[t] }}</option>
-    {% endfor %}
-  </select>
-  <select name="company" aria-label="Filter by company">
-    <option value="">All companies</option>
-    {% for c in firms %}
-      <option value="{{ c }}" {{ 'selected' if company == c }}>{{ c }}</option>
-    {% endfor %}
-  </select>
-  <select name="posted" aria-label="Filter by when posted">
-    <option value="">Posted anytime</option>
-    {% for d, label in [('1','Last 24h'), ('3','Last 3 days'), ('7','Last week'),
-                         ('14','Last 2 weeks'), ('30','Last month')] %}
-      <option value="{{ d }}" {{ 'selected' if posted == d }}>{{ label }}</option>
-    {% endfor %}
-  </select>
-  <button class="go">Filter</button>
-  {% if q or verdict or loc or company or posted %}
-    <a class="chip" href="/?show={{ show }}">Clear</a>
-  {% endif %}
-</form>
+<details class="filters-toggle" {{ 'open' if q or verdict or loc or company or posted }}>
+  <summary>Search &amp; filters{% if q or verdict or loc or company or posted %}
+    <span class="n">active</span>{% endif %}</summary>
+  <form class="filters" method="get" action="/">
+    <input type="hidden" name="show" value="{{ show }}">
+    <input class="grow" type="search" name="q" value="{{ q }}"
+           placeholder="Search titles, companies, reasons" aria-label="Search postings">
+    <select name="verdict" aria-label="Filter by verdict">
+      <option value="">Any verdict</option>
+      {% for v in ['APPLY','MAYBE','SKIP'] %}
+        <option value="{{ v }}" {{ 'selected' if verdict == v }}>{{ v|title }}</option>
+      {% endfor %}
+      <option value="unread" {{ 'selected' if verdict == 'unread' }}>Not read yet</option>
+    </select>
+    <select name="loc" aria-label="Filter by location">
+      <option value="">Anywhere</option>
+      {% for t in loc_order %}
+        <option value="{{ t }}" {{ 'selected' if loc == t }}>{{ loc_label[t] }}</option>
+      {% endfor %}
+    </select>
+    <select name="company" aria-label="Filter by company">
+      <option value="">All companies</option>
+      {% for c in firms %}
+        <option value="{{ c }}" {{ 'selected' if company == c }}>{{ c }}</option>
+      {% endfor %}
+    </select>
+    <select name="posted" aria-label="Filter by when posted">
+      <option value="">Posted anytime</option>
+      {% for d, label in [('1','Last 24h'), ('3','Last 3 days'), ('7','Last week'),
+                           ('14','Last 2 weeks'), ('30','Last month')] %}
+        <option value="{{ d }}" {{ 'selected' if posted == d }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button class="go">Filter</button>
+    {% if q or verdict or loc or company or posted %}
+      <a class="chip" href="/?show={{ show }}">Clear</a>
+    {% endif %}
+  </form>
+</details>
 {% endblock %}
 
 {% block body %}

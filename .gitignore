@@ -2,6 +2,7 @@
 # companies.example.json for the templates these are copied from.
 profile_local.py
 companies.json
+docs/
 data/
 seen.sqlite3
 jobradar.sqlite3

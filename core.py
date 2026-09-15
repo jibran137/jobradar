@@ -14,7 +14,7 @@ import subprocess
 import sys
 import unicodedata
 from datetime import datetime, timezone
-from html import unescape
+from html import escape, unescape
 from pathlib import Path
 
 import jobradar as jr
@@ -628,7 +628,7 @@ def _run_claude_cli(prompt, model=None):
         return None
 
 
-def _run_api(prompt, model):
+def _run_api(prompt, model, max_tokens=1024, effort="low"):
     """Anthropic SDK path — used inside Docker, where the CLI isn't present."""
     if not os.environ.get("ANTHROPIC_API_KEY"):
         return None
@@ -641,8 +641,8 @@ def _run_api(prompt, model):
         client = anthropic.Anthropic()
         msg = client.messages.create(
             model=model,
-            max_tokens=1024,
-            output_config={"effort": "low"},   # a three-line classification
+            max_tokens=max_tokens,
+            output_config={"effort": effort},
             messages=[{"role": "user", "content": prompt}],
         )
         if msg.stop_reason == "refusal":
@@ -651,6 +651,189 @@ def _run_api(prompt, model):
     except Exception as e:
         print(f"  ! anthropic API: {e}", file=sys.stderr)
         return None
+
+
+# ------------------------------------------------------------- cover letters
+
+try:
+    from profile_local import SENDER
+except ImportError:
+    from profile_example import SENDER
+
+COVER_LETTER_PROMPT = """{profile}
+
+Write a short, specific cover letter body for this candidate applying to the
+job below. Plain, direct style — no "I am excited to apply", no "I am writing
+to express interest", no generic enthusiasm. Ground every claim in a specific
+fact from the profile that maps to something specific the posting asks for.
+Only include a note about part-time study / full-time availability if the
+posting's timeline actually makes that relevant. 2-4 short paragraphs, plain
+prose, no bullet points, no sign-off line.
+
+Reply with EXACTLY this format and nothing else:
+GREETING: Hi <first name>, (use "Hi there," if no contact name is given below)
+HEADING: Application — <role title>
+BODY:
+<paragraph>
+
+<paragraph>
+
+Contact name (if known): {contact_name}
+COMPANY: {company}
+TITLE: {title}
+LOCATION: {location}
+
+POSTING:
+{jd}
+"""
+
+COVER_LETTER_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cover Letter — {sender_name} — {company}</title>
+<style>
+  @page {{ size: A4; margin: 16mm 22mm; }}
+  * {{ box-sizing: border-box; }}
+  body {{
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.46;
+    color: #1a1a1a;
+    margin: 0;
+  }}
+  .sender {{ font-size: 9.5pt; color: #444; margin-bottom: 20px; }}
+  .sender strong {{ font-size: 12pt; color: #111; }}
+  .meta {{ color: #555; }}
+  .date {{ text-align: right; color: #444; margin-bottom: 16px; font-size: 9.7pt; }}
+  h1 {{ font-size: 12.5pt; margin: 0 0 14px 0; color: #111; }}
+  p {{ margin: 0 0 10px 0; }}
+  .sig {{ margin-top: 4px; }}
+</style>
+</head>
+<body>
+
+<div class="sender">
+  <strong>{sender_name}</strong><br>
+  <span class="meta">{sender_city} · {sender_phone} · {sender_email}<br>
+  {sender_links}</span>
+</div>
+
+<div class="date">{sender_city}, {date}</div>
+
+<p style="margin-bottom:14px;">{company} · {title}</p>
+
+<h1>{heading}</h1>
+
+<p>{greeting}</p>
+
+{body_html}
+
+<p class="sig">Best,<br>{sender_name}</p>
+
+</body>
+</html>
+"""
+
+
+def _company_slug(company):
+    return re.sub(r"[^A-Za-z0-9]", "", company or "")
+
+
+def _render_cover_letter_html(company, title, greeting, heading, paragraphs):
+    links = " · ".join(v for v in
+                        (SENDER.get("linkedin"), SENDER.get("github"), SENDER.get("website"))
+                        if v)
+    body_html = "\n".join(f"<p>{escape(p)}</p>" for p in paragraphs)
+    return COVER_LETTER_HTML.format(
+        sender_name=escape(SENDER["name"]), company=escape(company), title=escape(title),
+        sender_city=escape(SENDER["city"]), sender_phone=escape(SENDER["phone"]),
+        sender_email=escape(SENDER["email"]), sender_links=escape(links),
+        date=datetime.now().strftime("%-d %B %Y"), heading=escape(heading),
+        greeting=escape(greeting), body_html=body_html)
+
+
+CHROME_CANDIDATES = [
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+]
+
+
+def _html_to_pdf(html_path, pdf_path):
+    chrome = next((p for p in CHROME_CANDIDATES if Path(p).exists()), None)
+    if not chrome:
+        raise RuntimeError("no Chrome/Chromium install found to render the PDF")
+    subprocess.run(
+        [chrome, "--headless=new", "--disable-gpu", "--no-pdf-header-footer",
+         f"--print-to-pdf={pdf_path}", f"file://{html_path}"],
+        check=True, capture_output=True, timeout=60)
+
+
+def _upsert_prep_letter(company, job_id, letter_pdf, cv_track_name):
+    con = db()
+    con.execute(
+        "INSERT INTO prep(company, job_id, letter_pdf, cv_track, checked_at)"
+        " VALUES(?,?,?,?,?)"
+        " ON CONFLICT(company, job_id) DO UPDATE SET"
+        " letter_pdf=excluded.letter_pdf, cv_track=excluded.cv_track,"
+        " checked_at=excluded.checked_at",
+        (company, job_id, letter_pdf, cv_track_name, now()))
+    con.commit()
+    con.close()
+
+
+def generate_cover_letter(company, job_id, model="claude-opus-5"):
+    """Draft, render and save a tailored cover letter for one posting.
+
+    Body copy comes from the same model that scores postings, filled into the
+    hand-written letterhead template every past letter used (see
+    cvwork/cover_letters/src/*.html). Rendered to PDF with headless Chrome —
+    no PDF library is installed, and that's how the existing letters were made.
+    Also records the CV track and marks the prep row checked, since both are
+    decidable from the posting alone."""
+    con = db()
+    row = con.execute("SELECT * FROM jobs WHERE company=? AND job_id=?",
+                       (company, job_id)).fetchone()
+    prep = con.execute("SELECT * FROM prep WHERE company=? AND job_id=?",
+                        (company, job_id)).fetchone()
+    con.close()
+    if not row:
+        raise ValueError(f"no such job: {company}/{job_id}")
+
+    contact_name = (prep["contact_name"] if prep else None) or ""
+    prompt = COVER_LETTER_PROMPT.format(
+        profile=PROFILE, contact_name=contact_name or "none",
+        company=row["company"], title=row["title"] or "",
+        location=row["location"] or "not stated", jd=(row["jd_text"] or "")[:12000])
+    out = (_run_claude_cli(prompt, model) if _have_cli()
+           else _run_api(prompt, model, max_tokens=1024, effort="medium"))
+    if not out:
+        raise RuntimeError("cover letter draft failed — no scoring backend reachable")
+
+    g = re.search(r"GREETING:\s*(.+)", out)
+    h = re.search(r"HEADING:\s*(.+)", out)
+    b = re.search(r"BODY:\s*\n(.+)", out, re.S)
+    greeting = g.group(1).strip() if g else "Hi there,"
+    heading = h.group(1).strip() if h else f"Application — {row['title'] or ''}"
+    body = b.group(1).strip() if b else out.strip()
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", body) if p.strip()]
+
+    html = _render_cover_letter_html(row["company"], row["title"] or "", greeting,
+                                      heading, paragraphs)
+    slug = _company_slug(row["company"])
+    src_dir = CVWORK / "cover_letters" / "src"
+    src_dir.mkdir(parents=True, exist_ok=True)
+    html_path = src_dir / f"cover_letter_{slug.lower()}.html"
+    html_path.write_text(html)
+
+    pdf_dir = CVWORK / "cover_letters"
+    pdf_path = pdf_dir / f"Anschreiben_{SENDER['name'].replace(' ', '_')}_{slug.upper()}.pdf"
+    _html_to_pdf(html_path, pdf_path)
+
+    track, _why = cv_track(row["title"] or "", row["jd_text"] or "")
+    letter_rel = pdf_path.relative_to(CVWORK).as_posix()
+    _upsert_prep_letter(row["company"], row["job_id"], letter_rel, track)
+    return letter_rel
 
 
 # ------------------------------------------------------------------ boards
