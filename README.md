@@ -13,6 +13,10 @@ application data (`data/`) are all gitignored. Copy `profile_example.py` to
 `profile_local.py` and `companies.example.json` to `companies.json` to make
 this yours — see each file's comments for what to fill in.
 
+![jobradar demo — reading the decision queue, tracker, and watched companies](assets/demo.gif)
+
+*Demo data — fake profile and postings, not a real search.*
+
 ---
 
 ## How it's built
