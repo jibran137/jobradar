@@ -32,7 +32,7 @@ flowchart LR
     A1 & A2 & A3 --> B[Sweep<br/><i>stdlib HTTP, no model calls</i>]
     B --> C[(SQLite<br/>jobradar.sqlite3)]
     C --> D{Title filter}
-    D -->|sales / senior / lead / etc| E[SKIP on sight<br/>— no LLM call]
+    D -->|sales / lead / manager / etc| E[SKIP on sight<br/>— no LLM call]
     D -->|plausible role| F[Fetch full job description]
     F --> G[Score with Claude<br/>against profile_local.py]
     G --> C
@@ -154,7 +154,7 @@ first.
 
 Three stages, cheapest first:
 
-1. **Title filter** — sales, marketing, installers, senior/lead/staff/manager.
+1. **Title filter** — sales, marketing, installers, lead/staff/manager/director.
    Marked SKIP on sight with the reason `Filtered on title: …`, so they never
    cost an LLM call. About 60% of postings stop here.
 2. **Fetch the full job description** — via the ATS API where one exists
