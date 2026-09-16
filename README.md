@@ -21,26 +21,6 @@ this yours — see each file's comments for what to fill in.
 
 ## How it's built
 
-```mermaid
-flowchart LR
-    subgraph Sources["Company career pages"]
-        A1[Ashby / Greenhouse / Lever /<br/>Personio / Recruitee /<br/>SmartRecruiters / Workable APIs]
-        A2[JSON-LD JobPosting]
-        A3[Chrome-rendered fallback<br/>for JS-only boards]
-    end
-
-    A1 & A2 & A3 --> B[Sweep<br/><i>stdlib HTTP, no model calls</i>]
-    B --> C[(SQLite<br/>jobradar.sqlite3)]
-    C --> D{Title filter}
-    D -->|sales / lead / manager / etc| E[SKIP on sight<br/>— no LLM call]
-    D -->|plausible role| F[Fetch full job description]
-    F --> G[Score with Claude<br/>against profile_local.py]
-    G --> C
-    C --> H[Location tiers<br/>remote → home city → commute →<br/>relocate → abroad]
-    H --> I[FastAPI + Jinja2 web app]
-    I --> J((You:<br/>Queue / Send list / Apply desk))
-```
-
 **Stack:** Python 3.12, FastAPI + Uvicorn (web app), Jinja2 (templates),
 SQLite via the stdlib `sqlite3` module — no ORM, no ODBC/Postgres/etc, just a
 single-file database (`jobradar.sqlite3`, ~20 MB for ~14k tracked postings).
